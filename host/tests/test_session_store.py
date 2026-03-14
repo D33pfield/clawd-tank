@@ -1,0 +1,114 @@
+"""Tests for session state persistence."""
+
+import json
+import time
+import pytest
+from pathlib import Path
+
+from clawd_tank_daemon.session_store import save_sessions, load_sessions
+
+
+def test_round_trip_basic(tmp_path):
+    path = tmp_path / "sessions.json"
+    states = {
+        "s1": {"state": "working", "last_event": 1234567890.0},
+        "s2": {"state": "idle", "last_event": 1234567891.0},
+    }
+    save_sessions(states, path)
+    loaded = load_sessions(path)
+    assert loaded == states
+
+
+def test_round_trip_with_subagents(tmp_path):
+    path = tmp_path / "sessions.json"
+    states = {
+        "s1": {
+            "state": "idle",
+            "last_event": 1234567890.0,
+            "subagents": {"a1", "a2"},
+        },
+    }
+    save_sessions(states, path)
+    loaded = load_sessions(path)
+    assert loaded["s1"]["subagents"] == {"a1", "a2"}
+    assert isinstance(loaded["s1"]["subagents"], set)
+
+
+def test_round_trip_empty_subagents(tmp_path):
+    path = tmp_path / "sessions.json"
+    states = {
+        "s1": {"state": "idle", "last_event": 1234567890.0, "subagents": set()},
+    }
+    save_sessions(states, path)
+    loaded = load_sessions(path)
+    assert loaded["s1"]["subagents"] == set()
+
+
+def test_round_trip_empty_dict(tmp_path):
+    path = tmp_path / "sessions.json"
+    save_sessions({}, path)
+    loaded = load_sessions(path)
+    assert loaded == {}
+
+
+def test_load_missing_file(tmp_path):
+    path = tmp_path / "nonexistent.json"
+    loaded = load_sessions(path)
+    assert loaded == {}
+
+
+def test_load_corrupt_file(tmp_path):
+    path = tmp_path / "sessions.json"
+    path.write_text("not valid json {{{")
+    loaded = load_sessions(path)
+    assert loaded == {}
+
+
+def test_load_empty_file(tmp_path):
+    path = tmp_path / "sessions.json"
+    path.write_text("")
+    loaded = load_sessions(path)
+    assert loaded == {}
+
+
+def test_load_invalid_entries_skipped(tmp_path):
+    """Entries missing required keys are dropped."""
+    path = tmp_path / "sessions.json"
+    path.write_text(json.dumps({
+        "good": {"state": "idle", "last_event": 1.0},
+        "bad_no_state": {"last_event": 1.0},
+        "bad_no_event": {"state": "idle"},
+        "bad_garbage": {"foo": "bar"},
+    }))
+    loaded = load_sessions(path)
+    assert "good" in loaded
+    assert "bad_no_state" not in loaded
+    assert "bad_no_event" not in loaded
+    assert "bad_garbage" not in loaded
+
+
+def test_save_creates_parent_dirs(tmp_path):
+    path = tmp_path / "nested" / "dir" / "sessions.json"
+    save_sessions({"s1": {"state": "idle", "last_event": 1.0}}, path)
+    assert path.exists()
+    loaded = load_sessions(path)
+    assert "s1" in loaded
+
+
+def test_save_overwrites_existing(tmp_path):
+    path = tmp_path / "sessions.json"
+    save_sessions({"s1": {"state": "idle", "last_event": 1.0}}, path)
+    save_sessions({"s2": {"state": "working", "last_event": 2.0}}, path)
+    loaded = load_sessions(path)
+    assert "s1" not in loaded
+    assert "s2" in loaded
+
+
+def test_save_is_atomic(tmp_path):
+    """No partial files left behind — temp files cleaned up."""
+    path = tmp_path / "sessions.json"
+    save_sessions({"s1": {"state": "idle", "last_event": 1.0}}, path)
+    # Only the target file should exist, no .tmp files
+    files = list(tmp_path.iterdir())
+    assert len(files) == 1
+    assert files[0].name == "sessions.json"
