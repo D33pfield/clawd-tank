@@ -51,6 +51,42 @@ static bool queue_pop(ble_evt_t *out) {
     return true;
 }
 
+/* ---- Thread-safe window command queue ---- */
+#define WIN_QUEUE_SIZE 8
+
+static sim_win_cmd_t s_win_queue[WIN_QUEUE_SIZE];
+static int s_win_queue_head = 0;
+static int s_win_queue_tail = 0;
+static int s_win_queue_count = 0;
+static pthread_mutex_t s_win_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static bool win_queue_push(const sim_win_cmd_t *cmd) {
+    pthread_mutex_lock(&s_win_queue_mutex);
+    if (s_win_queue_count >= WIN_QUEUE_SIZE) {
+        pthread_mutex_unlock(&s_win_queue_mutex);
+        printf("[tcp] Window command queue full, dropping command\n");
+        return false;
+    }
+    s_win_queue[s_win_queue_tail] = *cmd;
+    s_win_queue_tail = (s_win_queue_tail + 1) % WIN_QUEUE_SIZE;
+    s_win_queue_count++;
+    pthread_mutex_unlock(&s_win_queue_mutex);
+    return true;
+}
+
+static bool win_queue_pop(sim_win_cmd_t *out) {
+    pthread_mutex_lock(&s_win_queue_mutex);
+    if (s_win_queue_count == 0) {
+        pthread_mutex_unlock(&s_win_queue_mutex);
+        return false;
+    }
+    *out = s_win_queue[s_win_queue_head];
+    s_win_queue_head = (s_win_queue_head + 1) % WIN_QUEUE_SIZE;
+    s_win_queue_count--;
+    pthread_mutex_unlock(&s_win_queue_mutex);
+    return true;
+}
+
 /* ---- Pending config update (socket thread -> main thread) ---- */
 static volatile bool s_pending_config_update = false;
 
@@ -100,6 +136,33 @@ static void handle_config_action(const char *buf, uint16_t len, int client_fd) {
     cJSON_Delete(json);
 }
 
+static void handle_window_action(const char *buf, uint16_t len) {
+    cJSON *json = cJSON_ParseWithLength(buf, len);
+    if (!json) return;
+
+    cJSON *action = cJSON_GetObjectItem(json, "action");
+    if (!action || !cJSON_IsString(action)) { cJSON_Delete(json); return; }
+
+    sim_win_cmd_t cmd = {0};
+    if (strcmp(action->valuestring, "show_window") == 0) {
+        cmd.type = SIM_WIN_CMD_SHOW;
+        win_queue_push(&cmd);
+        printf("[tcp] Window cmd: show\n");
+    } else if (strcmp(action->valuestring, "hide_window") == 0) {
+        cmd.type = SIM_WIN_CMD_HIDE;
+        win_queue_push(&cmd);
+        printf("[tcp] Window cmd: hide\n");
+    } else if (strcmp(action->valuestring, "set_window") == 0) {
+        cJSON *pinned = cJSON_GetObjectItem(json, "pinned");
+        cmd.type = SIM_WIN_CMD_SET_PINNED;
+        cmd.pinned = (pinned && cJSON_IsTrue(pinned));
+        win_queue_push(&cmd);
+        printf("[tcp] Window cmd: set_pinned=%d\n", cmd.pinned);
+    }
+
+    cJSON_Delete(json);
+}
+
 static void handle_client(int client_fd) {
     printf("[tcp] Client connected\n");
 
@@ -133,6 +196,9 @@ static void handle_client(int client_fd) {
                 } else if (rc == 2) {
                     /* Config action — handle on socket thread */
                     handle_config_action(line_start, (uint16_t)line_len, client_fd);
+                } else if (rc == 3) {
+                    /* Window command — push to window queue for main thread */
+                    handle_window_action(line_start, (uint16_t)line_len);
                 } else if (rc < 0) {
                     printf("[tcp] Parse error, ignoring: %.*s\n", line_len, line_start);
                 }
@@ -243,6 +309,37 @@ bool sim_socket_process(void) {
         any = true;
     }
     return any;
+}
+
+bool sim_socket_process_window_cmds(void (*handler)(const sim_win_cmd_t *cmd)) {
+    bool any = false;
+    sim_win_cmd_t cmd;
+    while (win_queue_pop(&cmd)) {
+        if (handler) handler(&cmd);
+        any = true;
+    }
+    return any;
+}
+
+bool sim_socket_send_event(const char *json_line) {
+    if (!json_line) return false;
+
+    /* Build the full message (json + newline) before acquiring the mutex
+     * so we can send it in a single call while holding the lock. */
+    size_t len = strlen(json_line);
+    char buf[512];
+    if (len + 1 >= sizeof(buf)) return false;  /* message too long */
+    memcpy(buf, json_line, len);
+    buf[len] = '\n';
+
+    pthread_mutex_lock(&s_client_mutex);
+    if (s_client_fd < 0) {
+        pthread_mutex_unlock(&s_client_mutex);
+        return false;
+    }
+    ssize_t sent = send(s_client_fd, buf, len + 1, 0);
+    pthread_mutex_unlock(&s_client_mutex);
+    return sent >= 0;
 }
 
 void sim_socket_shutdown(void) {

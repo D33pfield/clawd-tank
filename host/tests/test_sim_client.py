@@ -187,3 +187,66 @@ async def test_on_disconnect_cb_called():
             await asyncio.sleep(0.05)
             await client.write_notification('{"action":"clear"}')
         assert len(disconnected) >= 1
+
+
+@pytest.mark.asyncio
+async def test_send_command():
+    """send_command sends arbitrary JSON payloads."""
+    received = []
+    async def handler(reader, writer):
+        while True:
+            line = await reader.readline()
+            if not line: break
+            received.append(line.decode().strip())
+        writer.close()
+
+    server, port = await start_mock_server(handler)
+    async with server:
+        client = SimClient(port=port)
+        await client.connect()
+        result = await client.send_command({"action": "show_window"})
+        assert result is True
+        await client.disconnect()
+        await asyncio.sleep(0.05)
+    assert len(received) == 1
+    assert json.loads(received[0])["action"] == "show_window"
+
+@pytest.mark.asyncio
+async def test_background_reader_receives_events():
+    """Background reader should invoke on_event callback for unsolicited messages."""
+    events = []
+    async def handler(reader, writer):
+        await asyncio.sleep(0.1)
+        writer.write(b'{"event":"window_hidden"}\n')
+        await writer.drain()
+        await asyncio.sleep(0.5)
+        writer.close()
+
+    server, port = await start_mock_server(handler)
+    async with server:
+        client = SimClient(port=port, on_event_cb=lambda e: events.append(e))
+        await client.connect()
+        await asyncio.sleep(0.3)
+        assert len(events) == 1
+        assert events[0]["event"] == "window_hidden"
+        await client.disconnect()
+
+@pytest.mark.asyncio
+async def test_read_config_with_background_reader():
+    """read_config should still work when background reader is active."""
+    async def handler(reader, writer):
+        line = await reader.readline()
+        req = json.loads(line.decode().strip())
+        if req.get("action") == "read_config":
+            writer.write(b'{"brightness":128,"sleep_timeout":300}\n')
+            await writer.drain()
+        await asyncio.sleep(0.5)
+        writer.close()
+
+    server, port = await start_mock_server(handler)
+    async with server:
+        client = SimClient(port=port)
+        await client.connect()
+        config = await client.read_config()
+        assert config["brightness"] == 128
+        await client.disconnect()

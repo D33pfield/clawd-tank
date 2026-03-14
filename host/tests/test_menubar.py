@@ -81,18 +81,19 @@ from clawd_tank_menubar.preferences import load_preferences, save_preferences
 def test_load_preferences_missing_file():
     with tempfile.TemporaryDirectory() as tmpdir:
         prefs = load_preferences(Path(tmpdir) / "prefs.json")
-        assert prefs == {"sim_enabled": False}
+        assert prefs == {"ble_enabled": True, "sim_enabled": True, "sim_window_visible": True, "sim_always_on_top": True}
 
 def test_save_and_load_preferences():
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "subdir" / "prefs.json"
-        save_preferences(path, {"sim_enabled": True})
+        save_preferences(path=path, updates={"sim_enabled": False})
         prefs = load_preferences(path)
-        assert prefs == {"sim_enabled": True}
+        assert prefs["sim_enabled"] is False
+        assert prefs["ble_enabled"] is True
 
 def test_load_preferences_malformed_json():
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "prefs.json"
         path.write_text("not json{{{")
         prefs = load_preferences(path)
-        assert prefs == {"sim_enabled": False}
+        assert prefs == {"ble_enabled": True, "sim_enabled": True, "sim_window_visible": True, "sim_always_on_top": True}

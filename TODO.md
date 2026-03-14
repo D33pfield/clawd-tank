@@ -76,10 +76,16 @@ Staleness eviction replaces timer-based sleep — sleep is now session-driven.
 - [x] **Comment `display_init()` return** (`main.c:42`) — return value intentionally discarded; LVGL tracks default display internally
 - [x] **LVGL mutex migration** — added TODO comment in `ui_manager.c` noting the `lv_lock()`/`lv_unlock()` migration consideration and flush-ready integration concern
 
+## Subagent Tracking (v1.2.0) — Complete
+
+- [x] **SubagentStart/SubagentStop hooks** — New hooks registered and forwarded to daemon via the hook handler script.
+- [x] **Per-session subagent tracking** — `subagents: set[agent_id]` tracked per session in daemon state dict.
+- [x] **Eviction suppression** — Sessions with active subagents are never evicted by staleness checker.
+- [x] **Display state integration** — Sessions with active subagents count as "working" in display state computation, preventing Clawd from sleeping during long subagent tasks.
+
 ## Future Considerations (Out of Scope)
 
 - Physical button interaction (dismiss notifications from the device)
 - Multiple host device support (pairing with more than one Mac)
 - OTA firmware updates over WiFi
 - Per-session project name display during working animations
-- Agent/subagent tracking (Claude Code Agent tool spawns)

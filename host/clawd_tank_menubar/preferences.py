@@ -7,21 +7,35 @@ from pathlib import Path
 
 logger = logging.getLogger("clawd-tank.menubar")
 
-DEFAULTS = {"sim_enabled": False}
+DEFAULTS = {
+    "ble_enabled": True,
+    "sim_enabled": True,
+    "sim_window_visible": True,
+    "sim_always_on_top": True,
+}
 PREFS_PATH = Path.home() / ".clawd-tank" / "preferences.json"
 
 
 def load_preferences(path: Path = PREFS_PATH) -> dict:
-    """Load preferences from disk. Returns defaults if missing or malformed."""
+    """Load preferences from disk, merged with defaults for missing keys."""
+    result = dict(DEFAULTS)
     try:
-        return json.loads(path.read_text())
+        stored = json.loads(path.read_text())
+        result.update(stored)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return dict(DEFAULTS)
+        pass
+    return result
 
 
-def save_preferences(path: Path = PREFS_PATH, prefs: dict = None) -> None:
-    """Save preferences to disk. Creates parent directory if needed."""
-    if prefs is None:
-        prefs = DEFAULTS
+def save_preferences(path: Path = PREFS_PATH, updates: dict = None) -> None:
+    """Read-modify-write: load existing, merge updates, save back."""
+    if updates is None:
+        updates = {}
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(prefs, indent=2) + "\n")
+    existing = {}
+    try:
+        existing = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    existing.update(updates)
+    path.write_text(json.dumps(existing, indent=2) + "\n")

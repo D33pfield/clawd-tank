@@ -50,32 +50,37 @@ def create_slider_menu_item(label: str, min_val: int = 0, max_val: int = 255,
     instance._on_change = on_change
     instance._last_send_time = 0.0
 
-    # Create container view
-    width = 250
-    height = 40
+    # Create container view — initial width is arbitrary; autoresizing
+    # stretches it to match the menu's actual width at render time.
+    width = 200  # placeholder, will stretch
+    height = 68
     view = AppKit.NSView.alloc().initWithFrame_(
         AppKit.NSMakeRect(0, 0, width, height)
     )
+    view.setAutoresizingMask_(AppKit.NSViewWidthSizable)
 
-    # Label
+    # Label (NSView y=0 is bottom) — fixed left edge
     label_field = AppKit.NSTextField.labelWithString_(label)
-    label_field.setFrame_(AppKit.NSMakeRect(16, 20, 120, 16))
+    label_field.setFrame_(AppKit.NSMakeRect(16, 40, 150, 16))
     label_field.setFont_(AppKit.NSFont.systemFontOfSize_(13))
+    label_field.setAutoresizingMask_(AppKit.NSViewMaxXMargin)
     view.addSubview_(label_field)
 
-    # Value label
+    # Value label — pinned to right edge
     instance._value_label = AppKit.NSTextField.labelWithString_(
         f"{int(initial / 255 * 100)}%"
     )
-    instance._value_label.setFrame_(AppKit.NSMakeRect(width - 50, 20, 34, 16))
+    instance._value_label.setFrame_(AppKit.NSMakeRect(width - 56, 40, 40, 16))
     instance._value_label.setFont_(AppKit.NSFont.systemFontOfSize_(11))
     instance._value_label.setAlignment_(AppKit.NSTextAlignmentRight)
+    instance._value_label.setAutoresizingMask_(AppKit.NSViewMinXMargin)
     view.addSubview_(instance._value_label)
 
-    # Slider
+    # Slider — stretches with the view, 26px height for thumb
     instance._slider = AppKit.NSSlider.alloc().initWithFrame_(
-        AppKit.NSMakeRect(16, 2, width - 32, 20)
+        AppKit.NSMakeRect(16, 8, width - 32, 26)
     )
+    instance._slider.setAutoresizingMask_(AppKit.NSViewWidthSizable)
     instance._slider.setMinValue_(min_val)
     instance._slider.setMaxValue_(max_val)
     instance._slider.setIntegerValue_(initial)

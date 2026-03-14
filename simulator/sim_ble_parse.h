@@ -9,6 +9,7 @@
 // Returns 0 on success (event written to *out, caller should enqueue).
 // Returns 1 for set_time (handled inline, no event to enqueue).
 // Returns 2 for config actions (read_config/write_config — caller handles directly).
+// Returns 3 for window commands (show_window/hide_window/set_window — caller handles directly).
 // Returns -1 on parse error.
 int sim_ble_parse_json(const char *buf, uint16_t len, ble_evt_t *out);
 

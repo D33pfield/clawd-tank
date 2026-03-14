@@ -40,6 +40,21 @@ def enable() -> None:
     )
 
 
+def is_stale() -> bool:
+    """Check if the plist points to a different executable than the current one."""
+    if not PLIST_PATH.exists():
+        return False
+    try:
+        with open(PLIST_PATH, "rb") as f:
+            plist = plistlib.load(f)
+        program_args = plist.get("ProgramArguments", [])
+        if program_args and program_args[0] != sys.executable:
+            return True
+    except (OSError, plistlib.InvalidFileException):
+        pass
+    return False
+
+
 def disable() -> None:
     """Unload and remove the launchd plist."""
     if not PLIST_PATH.exists():

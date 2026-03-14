@@ -75,6 +75,20 @@ NOTIFY_SCRIPT = textwrap.dedent('''\
         if event_name == "SessionEnd":
             return {"event": "dismiss", "hook": "SessionEnd", "session_id": session_id}
 
+        if event_name == "SubagentStart":
+            return {
+                "event": "subagent_start",
+                "session_id": session_id,
+                "agent_id": hook.get("agent_id", ""),
+            }
+
+        if event_name == "SubagentStop":
+            return {
+                "event": "subagent_stop",
+                "session_id": session_id,
+                "agent_id": hook.get("agent_id", ""),
+            }
+
         return None
 
 
@@ -131,6 +145,12 @@ HOOKS_CONFIG = {
         {"hooks": [{"type": "command", "command": HOOK_COMMAND}]}
     ],
     "SessionEnd": [
+        {"hooks": [{"type": "command", "command": HOOK_COMMAND}]}
+    ],
+    "SubagentStart": [
+        {"hooks": [{"type": "command", "command": HOOK_COMMAND}]}
+    ],
+    "SubagentStop": [
         {"hooks": [{"type": "command", "command": HOOK_COMMAND}]}
     ],
 }

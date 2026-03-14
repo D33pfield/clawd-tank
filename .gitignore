@@ -41,3 +41,4 @@ firmware/.cache/
 
 # Misc
 firebase-debug.log
+host/clawd_tank_menubar/_version_info.py

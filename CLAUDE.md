@@ -29,13 +29,16 @@ cd firmware && idf.py fullclean
 
 ### Simulator
 
-Requires CMake 3.16+ and SDL2 (`brew install sdl2`).
+Requires CMake 3.16+ and SDL2 (`brew install sdl2`) for local development. For distribution, use static linking (no external dependencies).
 
 ```bash
-# Build
+# Build (dynamic SDL2 — local development)
 cd simulator && cmake -B build && cmake --build build
 
-# Run interactive (SDL2 window, 2x scale)
+# Build (static SDL2 — self-contained binary for distribution)
+cd simulator && cmake -B build-static -DSTATIC_SDL2=ON && cmake --build build-static
+
+# Run interactive (SDL2 window, 1x scale, borderless, resizable)
 ./simulator/build/clawd-tank-sim
 
 # Run interactive, always on top
@@ -43,6 +46,12 @@ cd simulator && cmake -B build && cmake --build build
 
 # Run interactive with TCP listener (daemon can connect)
 ./simulator/build/clawd-tank-sim --listen
+
+# Run with window border (for development)
+./simulator/build/clawd-tank-sim --bordered
+
+# Run hidden, waiting for show_window TCP command (menu bar app mode)
+./simulator/build/clawd-tank-sim --listen --hidden
 
 # Run headless with events
 ./simulator/build/clawd-tank-sim --headless \
@@ -55,7 +64,17 @@ cd simulator && cmake -B build && cmake --build build
 
 Interactive keys: `c`=connect, `d`=disconnect, `n`=notify, `1-8`=dismiss, `x`=clear, `s`=screenshot, `z`=sleep, `q`=quit.
 
-The `--listen` flag starts a TCP server on port 19872 (configurable: `--listen 12345`). The daemon connects via `--sim` or `--sim-only` flags, or via the "Enable Simulator" toggle in the menu bar app.
+The `--listen` flag starts a TCP server on port 19872 (configurable: `--listen 12345`). The daemon connects via `--sim` or `--sim-only` flags, or via the Simulator submenu in the menu bar app.
+
+The window is borderless and resizable by default — drag from center, resize from edges. Integer scaling preserves pixel-crisp rendering. The simulator does not show in the Dock (`SDL_HINT_MAC_BACKGROUND_APP`).
+
+**TCP window commands** (JSON over the `--listen` connection):
+- `{"action":"show_window"}` — show the SDL window
+- `{"action":"hide_window"}` — hide it (process stays alive)
+- `{"action":"set_window","pinned":true}` — toggle always-on-top
+
+**Outbound events** (simulator → client):
+- `{"event":"window_hidden"}` — sent when the user closes the window (Cmd+W / X button)
 
 ### Tests
 
@@ -121,17 +140,19 @@ Claude Code hooks (SessionStart/PreToolUse/PreCompact/Stop/Notification/UserProm
 
 ### Simulator (`simulator/`)
 
-Compiles the **same firmware source files** unmodified. ESP-IDF APIs are replaced by shim headers in `simulator/shims/`. Uses SDL2 for display and stb_image_write for PNG capture. Supports inline event strings, JSON scenario files (`scenarios/`), a TCP listener (`--listen [port]`), and always-on-top mode (`--pinned`).
+Compiles the **same firmware source files** unmodified. ESP-IDF APIs are replaced by shim headers in `simulator/shims/`. Uses SDL2 for display and stb_image_write for PNG capture. Supports inline event strings, JSON scenario files (`scenarios/`), a TCP listener (`--listen [port]`), always-on-top mode (`--pinned`), and window show/hide via TCP commands.
+
+The simulator binary ships inside the Menu Bar `.app` bundle for hardware-free use. It can also be built standalone with `STATIC_SDL2=ON` for a self-contained binary (no Homebrew SDL2 needed).
 
 Key simulator-specific files:
-- **sim_ble_parse.c/h** — Shared JSON parser for TCP bridge (mirrors firmware's `parse_notification_json`)
-- **sim_socket.c/h** — TCP listener with mutex-guarded ring buffer queue (background pthread, main thread drains)
+- **sim_ble_parse.c/h** — Shared JSON parser for TCP bridge (mirrors firmware's `parse_notification_json`). Returns 0 (BLE event), 1 (set_time), 2 (config), 3 (window command), or -1 (error).
+- **sim_socket.c/h** — TCP listener with mutex-guarded ring buffers for BLE events and window commands (background pthread, main thread drains). Supports outbound events via `sim_socket_send_event()`.
 
 ### Host (`host/`)
 
 - **clawd-tank-notify** — Standalone hook handler (installed to `~/.clawd-tank/clawd-tank-notify` by the menu bar app). Reads Claude Code hook stdin, converts to daemon message, forwards via Unix socket. Uses only stdlib — no external imports.
-- **clawd_tank_daemon/** — Async Python daemon (asyncio). Multi-transport architecture with `TransportClient` Protocol. Supports BLE (`ClawdBleClient`) and TCP simulator (`SimClient`) transports with independent per-transport queues and sender tasks. Dynamic transport add/remove at runtime. Session state tracking with priority-based display state computation and staleness eviction.
-- **clawd_tank_menubar/** — macOS status bar app (rumps). Per-transport status display, simulator toggle with preference persistence (`~/.clawd-tank/preferences.json`), brightness/session timeout config, Claude Code hook installer (`hooks.py`), log file output (`~/Library/Logs/ClawdTank/clawd-tank.log`).
+- **clawd_tank_daemon/** — Async Python daemon (asyncio). Multi-transport architecture with `TransportClient` Protocol. Supports BLE (`ClawdBleClient`) and TCP simulator (`SimClient`) transports with independent per-transport queues and sender tasks. Dynamic transport add/remove at runtime. Session state tracking with priority-based display state computation and staleness eviction. `SimProcessManager` manages the simulator subprocess lifecycle (spawn, window commands, SIGTERM/SIGKILL shutdown).
+- **clawd_tank_menubar/** — macOS status bar app (rumps). Transport submenus (BLE/Simulator) with independent enable/disable, connection status with colored emoji indicators, simulator window controls (show/hide, always-on-top), brightness/session timeout config, Claude Code hook installer (`hooks.py`), version display, log file output (`~/Library/Logs/ClawdTank/clawd-tank.log`). Preferences persisted to `~/.clawd-tank/preferences.json` with read-modify-write pattern.
 
 ### Session State Model
 
@@ -142,6 +163,7 @@ The daemon tracks per-session state and computes a single display state sent to 
 - **Intensity tiers**: 1 session working = Typing, 2 = Juggling, 3+ = Building
 - **Special events**: `PreCompact` → oneshot sweeping animation, `Notification` (idle_prompt) → confused
 - **Staleness eviction**: Sessions with no events within the configurable timeout (default 10min) are evicted. No sessions = sleeping.
+- **Subagent tracking**: `SubagentStart`/`SubagentStop` hooks track active `agent_id`s per session. Sessions with active subagents are never evicted and count as "working" in display state.
 
 ## Key Constraints
 

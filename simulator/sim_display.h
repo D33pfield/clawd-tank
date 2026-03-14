@@ -12,9 +12,10 @@
  * Initialize the display.
  * @param headless  If true, no SDL window (framebuffer only).
  * @param scale     Window scale factor (interactive mode only; ignored if headless).
+ * @param bordered  If true, create a normal bordered window; if false, borderless.
  * @return The LVGL display object.
  */
-lv_display_t *sim_display_init(bool headless, int scale);
+lv_display_t *sim_display_init(bool headless, int scale, bool bordered);
 
 /** Get pointer to the raw RGB565 framebuffer (320*172 uint16_t). */
 uint16_t *sim_display_get_framebuffer(void);
@@ -33,6 +34,18 @@ void sim_display_set_quit(void);
 
 /** Set window always-on-top (pinned). */
 void sim_display_set_pinned(bool pinned);
+
+/** Show the SDL window (no-op if not created). */
+void sim_display_show_window(void);
+
+/** Hide the SDL window (no-op if not created). */
+void sim_display_hide_window(void);
+
+/** Returns true if the window is currently hidden. */
+bool sim_display_is_hidden(void);
+
+/** Clear the quit flag (e.g. after hiding instead of quitting). */
+void sim_display_clear_quit(void);
 
 /* Simulated time for headless mode */
 uint32_t sim_get_tick(void);

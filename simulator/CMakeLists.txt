@@ -3,8 +3,26 @@ project(clawd-tank-sim LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 
-# SDL2 (from Homebrew)
-find_package(SDL2 REQUIRED)
+# SDL2 — static or system
+option(STATIC_SDL2 "Download and statically link SDL2" OFF)
+
+if(STATIC_SDL2)
+    include(FetchContent)
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_TEST OFF CACHE BOOL "" FORCE)
+    set(SDL2_DISABLE_SDL2MAIN ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        SDL2
+        URL https://github.com/libsdl-org/SDL/releases/download/release-2.30.10/SDL2-2.30.10.tar.gz
+        URL_HASH SHA256=f59adf36a0fcf4c94198e7d3d776c1b3824211ab7aeebeb31fe19836661196aa
+    )
+    FetchContent_MakeAvailable(SDL2)
+    set(SDL2_TARGET SDL2-static)
+else()
+    find_package(SDL2 REQUIRED)
+    set(SDL2_TARGET SDL2::SDL2)
+endif()
 
 # Paths
 set(FIRMWARE_DIR ${CMAKE_SOURCE_DIR}/../firmware/main)
@@ -27,6 +45,7 @@ add_executable(clawd-tank-sim
     sim_events.c
     sim_ble_parse.c
     sim_socket.c
+    sim_timer.c
     cjson/cJSON.c
     # Shared firmware sources (compiled unmodified)
     ${FIRMWARE_DIR}/scene.c
@@ -54,10 +73,20 @@ target_compile_definitions(clawd-tank-sim PRIVATE SIMULATOR)
 
 target_link_libraries(clawd-tank-sim PRIVATE
     lvgl
-    SDL2::SDL2
+    ${SDL2_TARGET}
 )
 
-# macOS: SDL2 needs Cocoa framework
 if(APPLE)
-    target_link_libraries(clawd-tank-sim PRIVATE "-framework Cocoa")
+    target_link_libraries(clawd-tank-sim PRIVATE
+        "-framework Cocoa"
+        "-framework IOKit"
+        "-framework CoreAudio"
+        "-framework CoreVideo"
+        "-framework Metal"
+        "-framework Carbon"
+        "-framework ForceFeedback"
+        "-framework AudioToolbox"
+        "-framework GameController"
+        "-framework CoreHaptics"
+    )
 endif()

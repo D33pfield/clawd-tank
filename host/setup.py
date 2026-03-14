@@ -1,5 +1,45 @@
 # host/setup.py — py2app configuration for Clawd Tank menubar app
+import subprocess
+from pathlib import Path
 from setuptools import setup
+
+
+def _bake_version():
+    """Generate _version_info.py with the current git version."""
+    def _run(args):
+        return subprocess.run(args, capture_output=True, text=True, timeout=5)
+
+    def _is_dirty():
+        r = _run(["git", "status", "--porcelain"])
+        return bool(r.stdout.strip())
+
+    try:
+        tag = _run(["git", "describe", "--tags", "--exact-match", "HEAD"])
+        if tag.returncode == 0 and tag.stdout.strip():
+            version = tag.stdout.strip()
+            if _is_dirty():
+                version += "-dirty"
+        else:
+            branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+            sha = _run(["git", "rev-parse", "--short", "HEAD"])
+            count = _run(["git", "rev-list", "--count", "HEAD", "^master"])
+            if count.returncode != 0:
+                count = _run(["git", "rev-list", "--count", "HEAD", "^main"])
+
+            b = branch.stdout.strip() if branch.returncode == 0 else "unknown"
+            s = sha.stdout.strip() if sha.returncode == 0 else "??????"
+            n = count.stdout.strip() if count.returncode == 0 else "?"
+            dirty = "-dirty" if _is_dirty() else ""
+            version = f"{b}+{n}@{s}{dirty}"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        version = "unknown"
+
+    path = Path(__file__).parent / "clawd_tank_menubar" / "_version_info.py"
+    path.write_text(f'VERSION = "{version}"\n')
+    print(f"Baked version: {version}")
+
+
+_bake_version()
 
 APP = ["launcher.py"]
 DATA_FILES = []

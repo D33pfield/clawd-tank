@@ -271,3 +271,36 @@ def test_session_events_produce_no_ble_payload():
     assert daemon_message_to_ble_payload({"event": "session_start", "session_id": "s"}) is None
     assert daemon_message_to_ble_payload({"event": "tool_use", "session_id": "s"}) is None
     assert daemon_message_to_ble_payload({"event": "compact", "session_id": "s"}) is None
+
+
+def test_subagent_start_produces_subagent_start_event():
+    hook = {
+        "hook_event_name": "SubagentStart",
+        "session_id": "sess-1",
+        "agent_id": "agent-abc123",
+        "agent_type": "Explore",
+    }
+    msg = hook_payload_to_daemon_message(hook)
+    assert msg is not None
+    assert msg["event"] == "subagent_start"
+    assert msg["session_id"] == "sess-1"
+    assert msg["agent_id"] == "agent-abc123"
+
+
+def test_subagent_stop_produces_subagent_stop_event():
+    hook = {
+        "hook_event_name": "SubagentStop",
+        "session_id": "sess-1",
+        "agent_id": "agent-abc123",
+        "agent_type": "Explore",
+    }
+    msg = hook_payload_to_daemon_message(hook)
+    assert msg is not None
+    assert msg["event"] == "subagent_stop"
+    assert msg["session_id"] == "sess-1"
+    assert msg["agent_id"] == "agent-abc123"
+
+
+def test_subagent_events_produce_no_ble_payload():
+    assert daemon_message_to_ble_payload({"event": "subagent_start", "session_id": "s", "agent_id": "a"}) is None
+    assert daemon_message_to_ble_payload({"event": "subagent_stop", "session_id": "s", "agent_id": "a"}) is None

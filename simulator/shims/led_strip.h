@@ -1,4 +1,4 @@
-/* Simulator shim — LED strip stubs */
+/* Simulator shim — LED strip with color capture for RGB LED simulation */
 #pragma once
 #include <stdint.h>
 
@@ -27,6 +27,12 @@ typedef struct {
     struct { int with_dma; } flags;
 } led_strip_rmt_config_t;
 
+/* Pending color (set_pixel stores, refresh commits) */
+static uint8_t s_pending_r, s_pending_g, s_pending_b;
+
+/* Defined in sim_display.c — updates the visible border color */
+extern void sim_rgb_led_update(uint8_t r, uint8_t g, uint8_t b);
+
 static inline esp_err_t led_strip_new_rmt_device(const led_strip_config_t *c,
                                                   const led_strip_rmt_config_t *r,
                                                   led_strip_handle_t *h)
@@ -35,7 +41,26 @@ static inline esp_err_t led_strip_new_rmt_device(const led_strip_config_t *c,
     *h = (void *)1;
     return ESP_OK;
 }
+
 static inline esp_err_t led_strip_set_pixel(led_strip_handle_t h, int i, uint8_t r, uint8_t g, uint8_t b)
-{ (void)h; (void)i; (void)r; (void)g; (void)b; return ESP_OK; }
-static inline esp_err_t led_strip_refresh(led_strip_handle_t h) { (void)h; return ESP_OK; }
-static inline esp_err_t led_strip_clear(led_strip_handle_t h) { (void)h; return ESP_OK; }
+{
+    (void)h; (void)i;
+    s_pending_r = r;
+    s_pending_g = g;
+    s_pending_b = b;
+    return ESP_OK;
+}
+
+static inline esp_err_t led_strip_refresh(led_strip_handle_t h)
+{
+    (void)h;
+    sim_rgb_led_update(s_pending_r, s_pending_g, s_pending_b);
+    return ESP_OK;
+}
+
+static inline esp_err_t led_strip_clear(led_strip_handle_t h)
+{
+    (void)h;
+    sim_rgb_led_update(0, 0, 0);
+    return ESP_OK;
+}

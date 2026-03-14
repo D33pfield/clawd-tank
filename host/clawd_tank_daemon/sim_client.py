@@ -20,6 +20,7 @@ class SimClient:
         port: int = SIM_DEFAULT_PORT,
         on_disconnect_cb=None,
         on_connect_cb=None,
+        on_event_cb=None,
         retry_interval: float = SIM_RETRY_INTERVAL,
     ):
         self._host = host
@@ -28,8 +29,11 @@ class SimClient:
         self._writer: asyncio.StreamWriter | None = None
         self._on_disconnect_cb = on_disconnect_cb
         self._on_connect_cb = on_connect_cb
+        self._on_event_cb = on_event_cb
         self._retry_interval = retry_interval
         self._lock = asyncio.Lock()
+        self._reader_task: asyncio.Task | None = None
+        self._config_response: asyncio.Future | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -46,6 +50,7 @@ class SimClient:
                     self._host, self._port
                 )
                 logger.info("Connected to simulator")
+                self._reader_task = asyncio.create_task(self._background_reader())
                 if self._on_connect_cb:
                     self._on_connect_cb()
                 return
@@ -55,6 +60,13 @@ class SimClient:
 
     async def disconnect(self) -> None:
         """Close the TCP connection."""
+        if self._reader_task:
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+            self._reader_task = None
         if self._writer:
             try:
                 self._writer.close()
@@ -68,6 +80,10 @@ class SimClient:
         """Reconnect if disconnected."""
         if not self.is_connected:
             await self.connect()
+
+    async def send_command(self, payload: dict) -> bool:
+        """Send an arbitrary JSON command. Returns True on success."""
+        return await self.write_notification(json.dumps(payload))
 
     async def write_notification(self, payload: str) -> bool:
         """Send a JSON payload followed by newline. Returns True on success."""
@@ -90,17 +106,17 @@ class SimClient:
             if not self.is_connected:
                 return {}
             try:
+                self._config_response = asyncio.get_event_loop().create_future()
                 self._writer.write(b'{"action":"read_config"}\n')
                 await self._writer.drain()
-                line = await asyncio.wait_for(self._reader.readline(), timeout=2.0)
-                if not line:
-                    self._handle_disconnect()
-                    return {}
-                return json.loads(line.decode("utf-8").strip())
-            except (asyncio.TimeoutError, json.JSONDecodeError, OSError) as e:
+                result = await asyncio.wait_for(self._config_response, timeout=2.0)
+                return result
+            except (asyncio.TimeoutError, asyncio.CancelledError, OSError) as e:
                 logger.error("Config read failed: %s", e)
                 self._handle_disconnect()
                 return {}
+            finally:
+                self._config_response = None
 
     async def write_config(self, payload: str) -> bool:
         """Send a config write payload. Wraps in action envelope for TCP protocol."""
@@ -110,6 +126,30 @@ class SimClient:
             return False
         data["action"] = "write_config"
         return await self.write_notification(json.dumps(data))
+
+    async def _background_reader(self) -> None:
+        """Read unsolicited messages from the simulator and dispatch them."""
+        try:
+            while self._reader and not self._reader.at_eof():
+                line = await self._reader.readline()
+                if not line:
+                    break
+                try:
+                    data = json.loads(line.decode("utf-8").strip())
+                except json.JSONDecodeError:
+                    continue
+                # Config responses go to the waiting future
+                if self._config_response and not self._config_response.done():
+                    self._config_response.set_result(data)
+                    continue
+                # Events go to callback
+                if self._on_event_cb and "event" in data:
+                    self._on_event_cb(data)
+        except (ConnectionResetError, BrokenPipeError, OSError):
+            pass
+        except asyncio.CancelledError:
+            return
+        self._handle_disconnect()
 
     def _handle_disconnect(self) -> None:
         """Clean up state and notify on disconnect."""

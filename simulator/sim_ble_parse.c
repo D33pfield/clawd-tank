@@ -89,6 +89,11 @@ int sim_ble_parse_json(const char *buf, uint16_t len, ble_evt_t *out) {
                strcmp(action->valuestring, "read_config") == 0) {
         cJSON_Delete(json);
         return 2;
+    } else if (strcmp(action->valuestring, "show_window") == 0 ||
+               strcmp(action->valuestring, "hide_window") == 0 ||
+               strcmp(action->valuestring, "set_window") == 0) {
+        cJSON_Delete(json);
+        return 3;
     } else {
         cJSON_Delete(json);
         return -1;
