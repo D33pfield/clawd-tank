@@ -1,10 +1,10 @@
 # Clawd Notification Display — TODO
 
-## Status (v1.1.0)
+## Status (v1.2.0)
 
 Firmware builds, flashes, and runs on the Waveshare ESP32-C6-LCD-1.47 board.
 BLE advertising works, notifications can be sent and dismissed via BLE GATT writes.
-23 C tests pass (with ASan+UBSan), 98 Python tests pass (8 test files).
+23 C tests pass (with ASan+UBSan), 150 Python tests pass (11 test files).
 Clawd sprite animations and notification card UI are implemented.
 NVS-backed config store supports brightness and session timeout with BLE read/write.
 macOS menu bar app provides daemon control, device configuration UI, and simulator toggle.
@@ -14,6 +14,9 @@ Session-aware working animations driven by Claude Code hooks with intensity tier
 11 animated sprites integrated into scene.c (5 original + 6 working animations).
 Session state tracking in daemon with priority-based display state computation.
 Staleness eviction replaces timer-based sleep — sleep is now session-driven.
+Subagent lifecycle tracking prevents sleeping during long-running agent tasks.
+Session state persisted to disk — restarting the app preserves display state.
+Build script (`host/build.sh`) automates simulator + py2app + bundle.
 
 ---
 

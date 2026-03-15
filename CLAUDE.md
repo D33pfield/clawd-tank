@@ -76,6 +76,18 @@ The window is borderless and resizable by default — drag from center, resize f
 **Outbound events** (simulator → client):
 - `{"event":"window_hidden"}` — sent when the user closes the window (Cmd+W / X button)
 
+### Menu Bar App (.app bundle)
+
+```bash
+# Build everything (simulator + py2app + bundle) and install to /Applications
+cd host && ./build.sh --install
+
+# Build without installing
+cd host && ./build.sh
+```
+
+The build script automatically builds the static simulator if missing/outdated, runs `py2app`, and copies the sim binary into the `.app` bundle.
+
 ### Tests
 
 **Important:** Firmware and host use separate Python environments. Never install host dependencies (`bleak`, `rumps`, etc.) into the ESP-IDF venv or vice versa.
@@ -116,11 +128,12 @@ python tools/ble_interactive.py
 ### Data Flow
 
 ```
-Claude Code hooks (SessionStart/PreToolUse/PreCompact/Stop/Notification/UserPromptSubmit/SessionEnd)
+Claude Code hooks (SessionStart/PreToolUse/PreCompact/Stop/Notification/UserPromptSubmit/SessionEnd/SubagentStart/SubagentStop)
     → ~/.clawd-tank/clawd-tank-notify → Unix socket → clawd_tank_daemon → BLE → ESP32-C6 firmware
                                                                         ↘ TCP → Simulator (SDL2)
     Session state tracking (daemon):
         dict[session_id → state] → _compute_display_state() → set_status action → device animation
+        Persisted to ~/.clawd-tank/sessions.json on structural changes (survives daemon restart)
 
     Notification cards (daemon):
         add/dismiss events → _active_notifications → add/dismiss actions → device cards
@@ -151,7 +164,7 @@ Key simulator-specific files:
 ### Host (`host/`)
 
 - **clawd-tank-notify** — Standalone hook handler (installed to `~/.clawd-tank/clawd-tank-notify` by the menu bar app). Reads Claude Code hook stdin, converts to daemon message, forwards via Unix socket. Uses only stdlib — no external imports.
-- **clawd_tank_daemon/** — Async Python daemon (asyncio). Multi-transport architecture with `TransportClient` Protocol. Supports BLE (`ClawdBleClient`) and TCP simulator (`SimClient`) transports with independent per-transport queues and sender tasks. Dynamic transport add/remove at runtime. Session state tracking with priority-based display state computation and staleness eviction. `SimProcessManager` manages the simulator subprocess lifecycle (spawn, window commands, SIGTERM/SIGKILL shutdown).
+- **clawd_tank_daemon/** — Async Python daemon (asyncio). Multi-transport architecture with `TransportClient` Protocol. Supports BLE (`ClawdBleClient`) and TCP simulator (`SimClient`) transports with independent per-transport queues and sender tasks. Dynamic transport add/remove at runtime. Session state tracking with priority-based display state computation, staleness eviction, and subagent lifecycle tracking. `SimProcessManager` manages the simulator subprocess lifecycle (spawn, window commands, stdout/stderr logging through Python logger, SIGKILL on quit). `session_store.py` handles atomic save/load of session state to `~/.clawd-tank/sessions.json` for restart recovery.
 - **clawd_tank_menubar/** — macOS status bar app (rumps). Transport submenus (BLE/Simulator) with independent enable/disable, connection status with colored emoji indicators, simulator window controls (show/hide, always-on-top), brightness/session timeout config, Claude Code hook installer (`hooks.py`), version display, log file output (`~/Library/Logs/ClawdTank/clawd-tank.log`). Preferences persisted to `~/.clawd-tank/preferences.json` with read-modify-write pattern.
 
 ### Session State Model
