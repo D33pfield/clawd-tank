@@ -38,6 +38,12 @@ static const ble_uuid128_t config_chr_uuid = BLE_UUID128_INIT(
     0x01, 0x42, 0xca, 0x5f, 0x26, 0xe6, 0xf6, 0xe9
 );
 
+// Version Characteristic: B6DC9A5B-5041-4B32-9F8D-34321DF8637C
+static const ble_uuid128_t version_chr_uuid = BLE_UUID128_INIT(
+    0x7c, 0x63, 0xf8, 0x1d, 0x32, 0x34, 0x8d, 0x9f,
+    0x32, 0x4b, 0x41, 0x50, 0x5b, 0x9a, 0xdc, 0xb6
+);
+
 // Forward declarations
 static int ble_gap_event_cb(struct ble_gap_event *event, void *arg);
 static void start_advertising(void);
@@ -261,6 +267,16 @@ static int config_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     return 0;
 }
 
+static int version_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+                              struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        const char *ver = "2";
+        int rc = os_mbuf_append(ctxt->om, ver, strlen(ver));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 static const struct ble_gatt_svc_def gatt_svcs[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -275,6 +291,11 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
                 .uuid = &config_chr_uuid.u,
                 .access_cb = config_access_cb,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+            },
+            {
+                .uuid = &version_chr_uuid.u,
+                .access_cb = version_access_cb,
+                .flags = BLE_GATT_CHR_F_READ,
             },
             { 0 },
         },
