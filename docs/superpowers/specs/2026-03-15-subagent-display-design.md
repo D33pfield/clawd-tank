@@ -80,7 +80,7 @@ When notifications are active, the scene width shrinks to 107px. Only 1 Clawd fi
 | Subagent HUD | Mini-crab icon + yellow "×N" in top-left corner (same as full screen) |
 | Session badge | Blue "×N" badge in top-right of scene area, showing **total** session count. Only shown when sessions > 1. |
 
-Priority order for which session's animation to display: working > thinking > confused > idle (same as existing `_compute_display_state()` logic).
+In narrow mode, the single visible Clawd shows `anims[0]` (the oldest session). The firmware picks this from the `set_sessions` payload — no special priority logic needed since the daemon already sends the full list.
 
 ### Rendering Approach
 
@@ -139,7 +139,7 @@ A single new action replaces `set_status` for the multi-session case. The daemon
 }
 ```
 
-- `anims`: Ordered list of animation names, one per visible session. Ordered by priority (highest first). Max 4 entries — daemon truncates if more sessions exist. Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
+- `anims`: Ordered list of animation names, one per visible session. **Ordered by session arrival time** (oldest first) — this preserves spatial consistency so each Clawd stays in the same position across updates. Max 4 entries. When there are more than 4 sessions, the daemon keeps the 4 oldest and puts the rest in `overflow`. If a middle session ends, later sessions shift down (e.g., sessions [A, B, C] → B ends → [A, C]). Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
 - `subagents`: Total active subagent count across all sessions.
 
 The firmware derives session count from `len(anims)`, overflow count from the optional `overflow` field:
@@ -282,22 +282,23 @@ def _compute_display_state(self) -> dict:
     if not self._session_states:
         return {"status": "sleeping"}
 
-    # Collect per-session animations, ordered by priority
-    session_anims = []
-    for sid, s in self._session_states.items():
+    # Session order is preserved by _session_order list (maintained on
+    # session_start/subagent_start — append new, remove on SessionEnd).
+    # This ensures Clawds stay in consistent positions across updates.
+    anims = []
+    for sid in self._session_order[:MAX_VISIBLE]:
+        s = self._session_states.get(sid)
+        if not s:
+            continue
         has_subs = bool(s.get("subagents"))
         if s["state"] == "working":
-            session_anims.append(("building" if has_subs else "typing", 4, s["last_event"]))
+            anims.append("building" if has_subs else "typing")
         elif s["state"] == "thinking":
-            session_anims.append(("thinking", 3, s["last_event"]))
+            anims.append("thinking")
         elif s["state"] == "confused":
-            session_anims.append(("confused", 2, s["last_event"]))
+            anims.append("confused")
         else:
-            session_anims.append(("idle", 1, s["last_event"]))
-
-    # Sort by priority (highest first), then by most recent event (tiebreaker)
-    session_anims.sort(key=lambda x: (-x[1], -x[2]))
-    anims = [a[0] for a in session_anims[:MAX_VISIBLE]]
+            anims.append("idle")
 
     total_subagents = sum(
         len(s.get("subagents", set()))
@@ -313,7 +314,9 @@ def _compute_display_state(self) -> dict:
     return result
 ```
 
-Change detection in `_broadcast_display_state_if_changed()`: compare the new dict against `self._last_display_state` using `==`. The `anims` list is sorted by priority then recency, so ordering is deterministic. `_last_display_state` changes from `str` to `dict`.
+The daemon maintains `self._session_order: list[str]` — an ordered list of session IDs by arrival time. New sessions are appended; ended sessions are removed (later sessions shift down). This list is the source of truth for the `anims` array ordering, ensuring spatial consistency on the display.
+
+Change detection in `_broadcast_display_state_if_changed()`: compare the new dict against `self._last_display_state` using `==`. `_last_display_state` changes from `str` to `dict`.
 
 ### Scene Width Transitions
 
