@@ -10,6 +10,7 @@
 #include "cJSON.h"
 #include "config_store.h"
 #include "display.h"
+#include "scene.h"
 #include "ui_manager.h"
 #include <string.h>
 #include <stdlib.h>
@@ -45,6 +46,15 @@ static void safe_strncpy(char *dst, const char *src, size_t n) {
     if (!src) { dst[0] = '\0'; return; }
     strncpy(dst, src, n - 1);
     dst[n - 1] = '\0';
+}
+
+static int parse_anim_name(const char *str) {
+    if (strcmp(str, "idle") == 0)     return CLAWD_ANIM_IDLE;
+    if (strcmp(str, "typing") == 0)   return CLAWD_ANIM_TYPING;
+    if (strcmp(str, "thinking") == 0) return CLAWD_ANIM_THINKING;
+    if (strcmp(str, "building") == 0) return CLAWD_ANIM_BUILDING;
+    if (strcmp(str, "confused") == 0) return CLAWD_ANIM_CONFUSED;
+    return -1;
 }
 
 static int parse_display_status(const char *str) {
@@ -131,6 +141,35 @@ static void parse_notification_json(const char *buf, uint16_t len) {
         }
         evt.type = BLE_EVT_SET_STATUS;
         evt.status = (uint8_t)s;
+    } else if (strcmp(action->valuestring, "set_sessions") == 0) {
+        cJSON *anims = cJSON_GetObjectItem(json, "anims");
+        cJSON *ids = cJSON_GetObjectItem(json, "ids");
+        cJSON *subagents = cJSON_GetObjectItem(json, "subagents");
+        if (!anims || !cJSON_IsArray(anims) || !ids || !cJSON_IsArray(ids)) {
+            cJSON_Delete(json);
+            return;
+        }
+        evt.type = BLE_EVT_SET_SESSIONS;
+        evt.session_anim_count = 0;
+        evt.subagent_count = subagents && cJSON_IsNumber(subagents) ? (uint8_t)subagents->valueint : 0;
+        cJSON *overflow = cJSON_GetObjectItem(json, "overflow");
+        evt.session_overflow = overflow && cJSON_IsNumber(overflow) ? (uint8_t)overflow->valueint : 0;
+
+        int anim_size = cJSON_GetArraySize(anims);
+        int id_size = cJSON_GetArraySize(ids);
+        int count = anim_size < id_size ? anim_size : id_size;
+        if (count > MAX_VISIBLE_SESSIONS) count = MAX_VISIBLE_SESSIONS;
+
+        for (int i = 0; i < count; i++) {
+            cJSON *a = cJSON_GetArrayItem(anims, i);
+            cJSON *id = cJSON_GetArrayItem(ids, i);
+            if (!a || !cJSON_IsString(a) || !id || !cJSON_IsNumber(id)) continue;
+            int anim = parse_anim_name(a->valuestring);
+            if (anim < 0) continue;
+            evt.session_anims[evt.session_anim_count] = (uint8_t)anim;
+            evt.session_ids[evt.session_anim_count] = (uint16_t)id->valueint;
+            evt.session_anim_count++;
+        }
     } else {
         ESP_LOGW(TAG, "Unknown action '%s', ignoring", action->valuestring);
         cJSON_Delete(json);
