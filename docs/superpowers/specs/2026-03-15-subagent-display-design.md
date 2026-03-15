@@ -22,21 +22,20 @@ Sprite sizes vary by animation (not a fixed size):
 |-----------|------------|
 | Idle, Alert, Building, Confused, Juggling, Sweeping, Thinking, Typing | 180×180px |
 | Happy, Sleeping | 160×160px |
-| Disconnected | 200×160px |
 
-These sprites are larger than the 320×172 display — they're designed to extend beyond the visible area (clipped by LVGL container). The `y_offset=8` in the firmware pushes them 8px below the scene, and the top portion extends above the scene when the sprite is taller than the scene height.
+These sprites are larger than the 320×172 display — they're designed to extend beyond the visible area (clipped by LVGL container). The `y_offset=8` in the firmware pushes them 8px below the scene, and the top portion may extend above the scene.
 
-For multi-session layouts, sprites are scaled down from their native size using `lv_image_set_scale()`:
+**All sprites render at native size — no scaling.** For multi-session layouts, the Clawds' X centers are spaced evenly across the 320px width. The character body occupies only a fraction of the sprite canvas (roughly 60-70px of body within 180px canvas), so overlap between adjacent sprites is mostly in the transparent areas and looks natural.
 
-| Active Sessions | Layout | Scale Factor | Approx. Visible Width |
-|----------------|--------|-------------|----------------------|
-| 1 | 1 Clawd, centered | 1.0 (native) | ~180px |
-| 2 | 2 Clawds, side by side | ~0.75 | ~135px each |
-| 3 | 3 Clawds, spread evenly | ~0.55 | ~100px each |
-| 4 | 4 Clawds, spread evenly | ~0.42 | ~75px each |
-| 5+ | 4 Clawds visible + blue "+N" badge top-right | ~0.42 | ~75px each |
+| Active Sessions | X Centers (320px width) |
+|----------------|------------------------|
+| 1 | 160 (centered) |
+| 2 | 107, 213 |
+| 3 | 80, 160, 240 |
+| 4 | 64, 128, 192, 256 |
+| 5+ | 4 Clawds at 64, 128, 192, 256 + blue "+N" badge top-right |
 
-Scale factors are approximate — exact values should be tuned using `tools/scene-layout-editor.html` to ensure sprites fit without overlapping. The visible width varies by animation since the character doesn't fill the entire sprite canvas.
+Note: Disconnected animation (200×160px) is not relevant here — it's a whole-device state shown only when BLE is disconnected (no sessions exist).
 
 Each Clawd displays the animation matching its session state independently.
 
@@ -81,20 +80,9 @@ When notifications are active, the scene width shrinks to 107px. Only 1 Clawd fi
 
 Priority order for which session's animation to display: working > thinking > confused > idle (same as existing `_compute_display_state()` logic).
 
-### Scaling Strategy
+### Rendering Approach
 
-The current sprite assets are 160-200px wide, RLE-compressed RGB565, decoded at runtime into ARGB8888 frame buffers. For single-session mode, sprites render at native size (no scaling). For multi-session layouts (2+), sprites need to be scaled down.
-
-**Approach: LVGL software scaling via `lv_image_set_scale()`.**
-
-LVGL 9 supports runtime image scaling. The firmware decodes each frame to its native-size ARGB8888 buffer, then LVGL scales it down during rendering. This avoids creating separate sprite assets at each target size. `lv_image_set_scale()` takes a factor where 256 = 1.0x.
-
-Performance considerations:
-- Software bilinear scaling on ESP32-C6 RISC-V at 8fps
-- For 2 sessions: 2 sprites × ~135px target (downscaled from 180px) at 8fps
-- For 4 sessions: 4 sprites × ~75px target (downscaled from 180px) at 8fps
-- If scaling proves too slow, fall back to nearest-neighbor scaling which is faster but blockier — acceptable at these small sizes on a 320px display
-- Single-session case (most common) has zero scaling overhead
+All sprites render at their native size (160-200px). No runtime scaling. Multiple Clawds are positioned by setting their X center and relying on LVGL's clipping to handle any overflow beyond the 320×172 scene. The sprites' transparent canvas areas allow natural overlap without visual artifacts.
 
 ### Resource Budget
 
@@ -105,6 +93,7 @@ Performance considerations:
 - Total max: ~507KB PSRAM — within the 4MB PSRAM budget but significant
 - Optimization: allocate frame buffers lazily (only when a slot is activated), free when deactivated. Steady-state for 1 session = ~127KB (same as today).
 - Note: `ensure_frame_buf()` already handles dynamic reallocation; the buffer grows to fit the largest animation's frame size.
+- No scaling overhead — all sprites render at native size.
 
 **LVGL objects:**
 - Current: 1 sprite image + background objects
