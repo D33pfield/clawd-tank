@@ -106,7 +106,27 @@ All sprites render at their native size (160-200px). No runtime scaling. Multipl
 
 ### Protocol Changes
 
-#### New `set_sessions` Action
+#### Protocol Versioning
+
+A new read-only BLE GATT characteristic exposes the firmware's protocol version. The daemon reads it on connect and adapts its behavior accordingly.
+
+**Firmware side:**
+- New GATT characteristic UUID (alongside existing `notif_chr` and `config_chr`)
+- Returns a simple integer as a UTF-8 string (e.g., `"2"`)
+- Current firmware (before this feature) has no version characteristic → daemon treats absence as version 1
+
+**Daemon side:**
+- On transport connect, after `_sync_time_for()`, read the protocol version
+- Store per-transport: `self._transport_versions[name] = version`
+- Use the version to decide which actions to send
+
+**Simulator TCP side:**
+- The simulator responds to a `{"action":"get_version"}` query with `{"version":2}`
+- Or the daemon can just assume the simulator is always up-to-date (built from same source)
+
+**Version changelog:** See `docs/protocol-changelog.md` for the full version history.
+
+#### New `set_sessions` Action (Protocol v2)
 
 A single new action replaces `set_status` for the multi-session case. The daemon sends the full session state in one payload:
 
@@ -134,7 +154,9 @@ The firmware derives session count from `len(anims)`, overflow count from compar
 
 The `overflow` field is only present when there are more sessions than the 4 visible.
 
-**Backwards compatibility:** The old `set_status` action continues to work for firmware that hasn't been updated. The daemon detects the firmware version (or protocol capability) and falls back to `set_status` with the legacy single-animation format if needed. The simplest approach: try `set_sessions` first; if the firmware doesn't understand it, fall back to `set_status`.
+**Backwards compatibility:** The daemon checks the transport's protocol version on connect:
+- **v1 (no version characteristic):** Daemon falls back to `set_status` with the legacy single-animation format (`working_1`, `working_2`, etc.)
+- **v2+:** Daemon sends `set_sessions` with the full per-session data
 
 **Existing special cases preserved:**
 - `sweeping` (PreCompact) is still sent as a `set_status` oneshot before the regular state update
