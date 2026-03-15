@@ -421,8 +421,8 @@ async def test_daemon_persists_on_handle_message(tmp_path):
     await d._handle_message({"event": "session_start", "session_id": "s1"})
     assert path.exists()
     data = json.loads(path.read_text())
-    assert "s1" in data
-    assert data["s1"]["state"] == "registered"
+    assert "s1" in data["sessions"]
+    assert data["sessions"]["s1"]["state"] == "registered"
 
 
 @pytest.mark.asyncio
@@ -447,7 +447,7 @@ async def test_daemon_persists_on_state_transition(tmp_path):
     d._session_states["s1"] = {"state": "thinking", "last_event": time.time()}
     await d._handle_message({"event": "tool_use", "session_id": "s1"})
     data = json.loads(path.read_text())
-    assert data["s1"]["state"] == "working"
+    assert data["sessions"]["s1"]["state"] == "working"
 
 
 def test_daemon_persists_on_eviction(tmp_path):
@@ -457,7 +457,7 @@ def test_daemon_persists_on_eviction(tmp_path):
     d._session_staleness_timeout = 1
     d._evict_stale_sessions()
     data = json.loads(path.read_text())
-    assert "s1" not in data
+    assert "s1" not in data["sessions"]
 
 
 def test_daemon_loads_on_init(tmp_path):
@@ -520,4 +520,47 @@ async def test_session_end_persists_removal(tmp_path):
     await d._handle_message({"event": "session_start", "session_id": "s1"})
     await d._handle_message({"event": "dismiss", "hook": "SessionEnd", "session_id": "s1"})
     data = json.loads(path.read_text())
-    assert "s1" not in data
+    assert "s1" not in data["sessions"]
+
+
+# --- Session order tracking ---
+
+
+@pytest.mark.asyncio
+async def test_session_order_tracks_arrival():
+    """Sessions should be tracked in arrival order with stable display IDs."""
+    d = make_daemon()
+    await d._handle_message({"event": "session_start", "session_id": "aaa"})
+    await d._handle_message({"event": "session_start", "session_id": "bbb"})
+    await d._handle_message({"event": "session_start", "session_id": "ccc"})
+    assert d._session_order == [("aaa", 1), ("bbb", 2), ("ccc", 3)]
+
+
+@pytest.mark.asyncio
+async def test_session_order_removes_on_end():
+    """Ending a middle session shifts later ones down."""
+    d = make_daemon()
+    await d._handle_message({"event": "session_start", "session_id": "aaa"})
+    await d._handle_message({"event": "session_start", "session_id": "bbb"})
+    await d._handle_message({"event": "session_start", "session_id": "ccc"})
+    await d._handle_message({"event": "dismiss", "session_id": "bbb", "hook": "SessionEnd"})
+    assert d._session_order == [("aaa", 1), ("ccc", 3)]
+
+
+@pytest.mark.asyncio
+async def test_session_order_display_ids_never_reuse():
+    """Display IDs increment and are never reused even after removal."""
+    d = make_daemon()
+    await d._handle_message({"event": "session_start", "session_id": "aaa"})
+    await d._handle_message({"event": "dismiss", "session_id": "aaa", "hook": "SessionEnd"})
+    await d._handle_message({"event": "session_start", "session_id": "bbb"})
+    assert d._session_order == [("bbb", 2)]
+
+
+@pytest.mark.asyncio
+async def test_session_order_created_on_tool_use_if_missing():
+    """tool_use creates session in order if not already tracked."""
+    d = make_daemon()
+    await d._handle_message({"event": "tool_use", "session_id": "aaa"})
+    assert len(d._session_order) == 1
+    assert d._session_order[0][0] == "aaa"
