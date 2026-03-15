@@ -23,6 +23,7 @@
 #include "assets/sprite_confused.h"
 #include "assets/sprite_sweeping.h"
 #include "rle_sprite.h"
+#include "pixel_font.h"
 
 /* ---------- Constants ---------- */
 
@@ -238,6 +239,11 @@ struct scene_t {
 
     /* No-connection label */
     lv_obj_t *noconn_label;
+
+    /* HUD overlay */
+    lv_obj_t *hud_canvas;        /* canvas for pixel font rendering */
+    uint8_t hud_subagent_count;
+    uint8_t hud_overflow;
 };
 
 /* ---------- Helpers ---------- */
@@ -430,6 +436,16 @@ scene_t *scene_create(lv_obj_t *parent)
     lv_label_set_text(s->noconn_label, "No connection");
     lv_obj_add_flag(s->noconn_label, LV_OBJ_FLAG_HIDDEN);
 
+    /* HUD canvas — for subagent counter and overflow badge */
+    s->hud_canvas = lv_canvas_create(s->container);
+    /* Canvas buffer for pixel font: 80x12 pixels @ ARGB8888 */
+    static uint8_t hud_buf[80 * 12 * 4];
+    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 80, 12, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 4, 4);
+    lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
+    s->hud_subagent_count = 0;
+    s->hud_overflow = 0;
+
     return s;
 }
 
@@ -581,6 +597,40 @@ static int find_id_in(const uint16_t *ids, int count, uint16_t target)
     return -1;
 }
 
+/* ---------- HUD overlay ---------- */
+
+static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflow) {
+    s->hud_subagent_count = subagent_count;
+    s->hud_overflow = overflow;
+
+    if (subagent_count == 0 && overflow == 0) {
+        lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    /* Clear canvas */
+    lv_canvas_fill_bg(s->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
+
+    int x = 0;
+
+    if (subagent_count > 0) {
+        /* Draw "xN" for subagent count */
+        char buf[8];
+        snprintf(buf, sizeof(buf), "x%d", subagent_count);
+        pixel_font_draw(s->hud_canvas, buf, x, 1, 2, lv_color_hex(0x88ccff));
+    }
+
+    if (overflow > 0) {
+        /* Draw "+N" for overflow at right side */
+        char buf[8];
+        snprintf(buf, sizeof(buf), "+%d", overflow);
+        /* Position at right side of canvas */
+        pixel_font_draw(s->hud_canvas, buf, 50, 1, 2, lv_color_hex(0xffaa88));
+    }
+
+    lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
+}
+
 void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
                         int count, uint8_t subagent_count, uint8_t overflow)
 {
@@ -671,6 +721,7 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
         s->slots[i].active = false;
     }
 
+    scene_update_hud(s, subagent_count, overflow);
     s->active_slot_count = count;
 }
 
