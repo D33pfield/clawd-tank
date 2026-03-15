@@ -22,11 +22,16 @@ def _bake_version():
         else:
             branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
             sha = _run(["git", "rev-parse", "--short", "HEAD"])
-            count = _run(["git", "rev-list", "--count", "HEAD", "^master"])
-            if count.returncode != 0:
-                count = _run(["git", "rev-list", "--count", "HEAD", "^main"])
-
             b = branch.stdout.strip() if branch.returncode == 0 else "unknown"
+            # On master/main, count against remote to show unpushed commits
+            if b in ("master", "main"):
+                count = _run(["git", "rev-list", "--count", "HEAD", f"^origin/{b}"])
+                if count.returncode != 0:
+                    count = _run(["git", "rev-list", "--count", "HEAD"])
+            else:
+                count = _run(["git", "rev-list", "--count", "HEAD", "^master"])
+                if count.returncode != 0:
+                    count = _run(["git", "rev-list", "--count", "HEAD", "^main"])
             s = sha.stdout.strip() if sha.returncode == 0 else "??????"
             n = count.stdout.strip() if count.returncode == 0 else "?"
             dirty = "-dirty" if _is_dirty() else ""

@@ -24,17 +24,15 @@ def save_sessions(sessions: dict[str, dict], path: Path = SESSIONS_PATH) -> None
         fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
         try:
             os.write(fd, json.dumps(serializable).encode())
+        finally:
             os.close(fd)
-            os.replace(tmp_path, str(path))
-        except OSError:
-            os.close(fd)
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        os.replace(tmp_path, str(path))
     except OSError:
         logger.warning("Failed to save session state to %s", path)
+        try:
+            os.unlink(tmp_path)
+        except (OSError, UnboundLocalError):
+            pass
 
 
 def load_sessions(path: Path = SESSIONS_PATH) -> dict[str, dict]:
@@ -48,6 +46,8 @@ def load_sessions(path: Path = SESSIONS_PATH) -> dict[str, dict]:
             return {}
         valid = {}
         for sid, state in data.items():
+            if not isinstance(state, dict):
+                continue
             if "state" not in state or "last_event" not in state:
                 continue
             if "subagents" in state:

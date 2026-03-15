@@ -462,10 +462,7 @@ class ClawdTankApp(rumps.App, DaemonObserver):
                         await self._daemon.remove_transport("sim")
                     # Kill sim process (client already disconnected, just kill the process)
                     if self._sim_process:
-                        proc = self._sim_process._process
-                        if proc and proc.returncode is None:
-                            proc.kill()
-                            await proc.wait()
+                        await self._sim_process.kill()
                         self._sim_process = None
                     # Now shut down daemon (BLE disconnect, socket cleanup)
                     await self._daemon._shutdown()
@@ -490,6 +487,10 @@ def main():
             logging.FileHandler(log_dir / "clawd-tank.log"),
         ],
     )
+    from .version import get_version
+    logger = logging.getLogger("clawd-tank.menubar")
+    logger.info("Clawd Tank %s starting", get_version())
+
     hooks.install_notify_script()
     app = ClawdTankApp()
     app._start_daemon_thread()

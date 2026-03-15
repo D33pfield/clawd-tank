@@ -104,6 +104,22 @@ def test_save_overwrites_existing(tmp_path):
     assert "s2" in loaded
 
 
+def test_load_non_dict_values_skipped(tmp_path):
+    """Entry values that are not dicts are dropped."""
+    path = tmp_path / "sessions.json"
+    path.write_text(json.dumps({
+        "good": {"state": "idle", "last_event": 1.0},
+        "number": 42,
+        "string": "garbage",
+        "list": [1, 2, 3],
+    }))
+    loaded = load_sessions(path)
+    assert "good" in loaded
+    assert "number" not in loaded
+    assert "string" not in loaded
+    assert "list" not in loaded
+
+
 def test_save_is_atomic(tmp_path):
     """No partial files left behind — temp files cleaned up."""
     path = tmp_path / "sessions.json"

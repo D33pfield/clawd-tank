@@ -18,7 +18,7 @@ Claude Code hooks --> clawd-tank-notify --> daemon --> BLE --> ESP32-C6 display
                                                   \-> TCP --> Simulator (SDL2)
 ```
 
-1. **Claude Code hooks** (`SessionStart`, `PreToolUse`, `PreCompact`, `Stop`, `Notification`, `UserPromptSubmit`, `SessionEnd`) fire on session events
+1. **Claude Code hooks** (`SessionStart`, `PreToolUse`, `PreCompact`, `Stop`, `Notification`, `UserPromptSubmit`, `SessionEnd`, `SubagentStart`, `SubagentStop`) fire on session events
 2. **clawd-tank-notify** (`~/.clawd-tank/clawd-tank-notify`) forwards the event to the daemon via Unix socket
 3. The **daemon** tracks per-session state, computes a display state, and sends JSON payloads to connected transports (BLE hardware, TCP simulator)
 4. The **firmware** (or simulator) renders Clawd's working animation + notification cards on the LCD via LVGL
@@ -95,7 +95,10 @@ The menu bar app bundles the daemon and simulator with a status bar UI. It manag
 # Run from source
 cd host && python -m clawd_tank_menubar
 
-# Or build a standalone .app (bakes git version, bundles simulator)
+# Build and install (builds static simulator, py2app, bundles binary)
+cd host && ./build.sh --install
+
+# Or build manually
 cd host && pip install py2app && python setup.py py2app
 cp ../simulator/build-static/clawd-tank-sim "dist/Clawd Tank.app/Contents/MacOS/"
 open "dist/Clawd Tank.app"
@@ -136,7 +139,8 @@ The daemon auto-starts on the first hook event. Logs at `~/.clawd-tank/daemon.lo
 
 - **Working animations** — real-time session-aware animations driven by Claude Code hooks (thinking, typing, juggling, building, confused, sweeping)
 - **Workload meter** — animation intensity scales with concurrent sessions: 1 = typing, 2 = juggling, 3+ = building
-- **Session tracking** — daemon tracks per-session state with priority-based display resolution and staleness eviction
+- **Session tracking** — daemon tracks per-session state with priority-based display resolution, staleness eviction, and subagent lifecycle tracking
+- **Session persistence** — session state survives daemon restarts, so relaunching the app immediately shows the correct animation for running sessions
 - **Time display** — synced from host over BLE on connect (no WiFi/NTP needed)
 - **RGB LED flash** — onboard WS2812B cycles through colors on new notifications
 - **RLE sprite compression** — all sprite assets compressed ~14:1 (13MB raw → ~900KB)

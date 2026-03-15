@@ -97,6 +97,13 @@ class SimProcessManager:
                 await self._process.wait()
             self._process = None
 
+    async def kill(self) -> None:
+        """Immediately kill the simulator process without graceful shutdown."""
+        if self._process and self._process.returncode is None:
+            self._process.kill()
+            await self._process.wait()
+            self._process = None
+
     async def show_window(self) -> bool:
         if self._client and self._client.is_connected:
             return await self._client.send_command({"action": "show_window"})
