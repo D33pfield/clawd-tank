@@ -4,7 +4,7 @@
 
 Firmware builds, flashes, and runs on the Waveshare ESP32-C6-LCD-1.47 board.
 BLE advertising works, notifications can be sent and dismissed via BLE GATT writes.
-23 C tests pass (with ASan+UBSan), 150 Python tests pass (11 test files).
+23 C tests pass (with ASan+UBSan), 151 Python tests pass (11 test files).
 Clawd sprite animations and notification card UI are implemented.
 NVS-backed config store supports brightness and session timeout with BLE read/write.
 macOS menu bar app provides daemon control, device configuration UI, and simulator toggle.

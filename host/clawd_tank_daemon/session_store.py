@@ -22,10 +22,8 @@ def save_sessions(sessions: dict[str, dict], path: Path = SESSIONS_PATH) -> None
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-        try:
-            os.write(fd, json.dumps(serializable).encode())
-        finally:
-            os.close(fd)
+        with os.fdopen(fd, "w") as f:
+            json.dump(serializable, f)
         os.replace(tmp_path, str(path))
     except OSError:
         logger.warning("Failed to save session state to %s", path)

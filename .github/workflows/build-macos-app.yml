@@ -20,7 +20,12 @@ jobs:
           cmake -B build-static -DSTATIC_SDL2=ON
           cmake --build build-static
           # Verify no SDL2 dynamic dependency
-          ! otool -L build-static/clawd-tank-sim | grep -i sdl
+          otool -L build-static/clawd-tank-sim > /tmp/otool-out.txt
+          if grep -qi sdl /tmp/otool-out.txt; then
+            echo "ERROR: SDL2 dynamic dependency found"
+            cat /tmp/otool-out.txt
+            exit 1
+          fi
 
       - uses: actions/setup-python@v5
         with:
