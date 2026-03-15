@@ -10,13 +10,26 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build static simulator
+        run: |
+          cd simulator
+          cmake -B build-static -DSTATIC_SDL2=ON
+          cmake --build build-static
+          # Verify no SDL2 dynamic dependency
+          otool -L build-static/clawd-tank-sim > /tmp/otool-out.txt
+          if grep -qi sdl /tmp/otool-out.txt; then
+            echo "ERROR: SDL2 dynamic dependency found"
+            cat /tmp/otool-out.txt
+            exit 1
+          fi
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install dependencies
         working-directory: host
@@ -43,6 +56,10 @@ jobs:
       - name: Build .app with py2app
         working-directory: host
         run: python setup.py py2app
+
+      - name: Bundle simulator into app
+        run: |
+          cp simulator/build-static/clawd-tank-sim "host/dist/Clawd Tank.app/Contents/MacOS/"
 
       - name: Create DMG
         working-directory: host

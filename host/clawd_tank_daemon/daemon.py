@@ -16,6 +16,8 @@ from .protocol import daemon_message_to_ble_payload
 from .sim_client import SimClient, SIM_DEFAULT_PORT
 from .socket_server import SocketServer
 from .transport import TransportClient
+from . import session_store
+from .session_store import save_sessions, load_sessions
 
 logger = logging.getLogger("clawd-tank")
 
@@ -90,6 +92,7 @@ class ClawdDaemon:
         headless: bool = True,
         sim_port: int = 0,
         sim_only: bool = False,
+        sessions_path: Optional[Path] = None,
     ):
         self._transports: dict[str, TransportClient] = {}
         self._transport_queues: dict[str, asyncio.Queue] = {}
@@ -122,9 +125,11 @@ class ClawdDaemon:
         self._lock_fd: int | None = None
         self._observer = observer
         self._headless = headless
-        self._session_states: dict[str, dict] = {}
+        self._sessions_path = sessions_path if sessions_path is not None else session_store.SESSIONS_PATH
+        self._session_states: dict[str, dict] = load_sessions(self._sessions_path)
         self._last_display_state: str = "sleeping"
         self._session_staleness_timeout: float = 600.0
+        self._evict_stale_sessions()
 
     async def _handle_message(self, msg: dict) -> None:
         """Handle a message from clawd-tank-notify via the socket."""
@@ -139,7 +144,7 @@ class ClawdDaemon:
         elif event == "dismiss":
             self._active_notifications.pop(session_id, None)
 
-        self._update_session_state(event, hook, session_id, msg.get("agent_id", ""))
+        changed = self._update_session_state(event, hook, session_id, msg.get("agent_id", ""))
 
         # --- Handle compact: send sweeping oneshot ---
         if event == "compact":
@@ -163,6 +168,9 @@ class ClawdDaemon:
         if event != "compact":
             await self._broadcast_display_state_if_changed()
 
+        if changed:
+            self._persist_sessions()
+
     def _compute_display_state(self) -> str:
         """Derive the display state from all active session states."""
         if not self._session_states:
@@ -179,11 +187,19 @@ class ClawdDaemon:
             return "confused"
         return "idle"
 
-    def _update_session_state(self, event: str, hook: str, session_id: str, agent_id: str = "") -> None:
-        """Update per-session state based on a received event."""
+    def _update_session_state(self, event: str, hook: str, session_id: str, agent_id: str = "") -> bool:
+        """Update per-session state based on a received event.
+
+        Returns True if session state or subagents changed structurally
+        (not just last_event), indicating the change should be persisted.
+        """
         if not session_id:
-            return
+            return False
         now = time.time()
+        prev = self._session_states.get(session_id)
+        prev_state = prev["state"] if prev else None
+        prev_subagents = prev.get("subagents", set()).copy() if prev else None
+
         if event == "session_start":
             self._session_states[session_id] = {"state": "registered", "last_event": now}
         elif event == "tool_use":
@@ -212,7 +228,7 @@ class ClawdDaemon:
                     self._session_states[session_id]["last_event"] = now
         elif event == "subagent_start":
             if not agent_id:
-                return
+                return False
             self._session_states.setdefault(session_id, {"state": "working", "last_event": now})
             self._session_states[session_id].setdefault("subagents", set())
             self._session_states[session_id]["subagents"].add(agent_id)
@@ -224,16 +240,27 @@ class ClawdDaemon:
                     subagents.discard(agent_id)
                 self._session_states[session_id]["last_event"] = now
 
+        cur = self._session_states.get(session_id)
+        if cur is None:
+            return prev is not None  # session was removed
+        return cur["state"] != prev_state or cur.get("subagents", set()) != (prev_subagents or set())
+
     def _evict_stale_sessions(self) -> None:
+        # Active subagents refresh last_event via PreToolUse on the parent session.
+        # If last_event is stale, subagents are dead too — safe to evict.
         now = time.time()
         stale = [
             sid for sid, s in self._session_states.items()
             if now - s["last_event"] > self._session_staleness_timeout
-            and not s.get("subagents")
         ]
         for sid in stale:
             logger.info("Evicting stale session: %s", sid[:12])
             del self._session_states[sid]
+        if stale:
+            self._persist_sessions()
+
+    def _persist_sessions(self) -> None:
+        save_sessions(self._session_states, self._sessions_path)
 
     async def _broadcast_display_state_if_changed(self) -> None:
         """Broadcast a set_status action to all connected transports if display state changed."""
@@ -298,6 +325,7 @@ class ClawdDaemon:
 
         # Send current display state
         state = self._compute_display_state()
+        self._last_display_state = state
         status_payload = json.dumps({"action": "set_status", "status": state})
         await transport.write_notification(status_payload)
 
@@ -447,6 +475,7 @@ class ClawdDaemon:
         self._staleness_task = asyncio.create_task(self._staleness_checker())
 
         await self._shutdown_event.wait()
+        logger.info("Daemon run() finished")
 
 
 def main():

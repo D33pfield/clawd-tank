@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import signal
+import subprocess
 import sys
 from typing import Callable, Optional
 
@@ -51,33 +52,72 @@ class SimProcessManager:
         if self._on_window_event:
             self._on_window_event(event)
 
-    async def _log_stderr(self) -> None:
-        if not self._process or not self._process.stderr:
+    async def _kill_orphaned_sim(self) -> None:
+        """Kill any orphaned clawd-tank-sim processes listening on our port."""
+        def _do_kill():
+            result = subprocess.run(
+                ["lsof", "-ti", f":{self._port}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                return
+            for pid_str in result.stdout.strip().split('\n'):
+                if not pid_str.strip():
+                    continue
+                pid = int(pid_str)
+                # Verify it's actually a clawd-tank-sim process
+                ps_result = subprocess.run(
+                    ["ps", "-p", str(pid), "-o", "comm="],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if "clawd-tank-sim" not in ps_result.stdout:
+                    logger.warning("PID %d on port %d is not clawd-tank-sim, skipping", pid, self._port)
+                    continue
+                logger.info("Killing orphaned clawd-tank-sim (PID %d) on port %d", pid, self._port)
+                os.kill(pid, signal.SIGKILL)
+        try:
+            await asyncio.to_thread(_do_kill)
+        except (subprocess.TimeoutExpired, ValueError, ProcessLookupError,
+                PermissionError, FileNotFoundError, OSError):
+            pass
+
+    async def _log_stream(self, stream, level) -> None:
+        if not stream:
             return
         try:
-            async for line in self._process.stderr:
+            async for line in stream:
                 text = line.decode("utf-8", errors="replace").rstrip()
                 if text:
-                    logger.warning("[sim-stderr] %s", text)
+                    logger.log(level, "%s", text)
         except (ValueError, asyncio.CancelledError):
             pass
 
     async def start(self) -> Optional[SimClient]:
         if await self._is_port_in_use():
-            logger.warning("Port %d already in use, connecting to existing simulator", self._port)
-        else:
-            binary = self._find_binary()
-            if not binary:
-                logger.error("clawd-tank-sim binary not found")
+            logger.warning("Port %d already in use, killing orphaned process", self._port)
+            await self._kill_orphaned_sim()
+            # Wait for port to be released, with timeout
+            for _ in range(10):
+                await asyncio.sleep(0.5)
+                if not await self._is_port_in_use():
+                    break
+            else:
+                logger.error("Port %d still in use after killing orphan", self._port)
                 return None
-            logger.info("Starting simulator: %s --listen %d --hidden", binary, self._port)
-            self._process = await asyncio.create_subprocess_exec(
-                binary, "--listen", str(self._port), "--hidden",
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            asyncio.create_task(self._log_stderr())
-            await asyncio.sleep(0.3)
+
+        binary = self._find_binary()
+        if not binary:
+            logger.error("clawd-tank-sim binary not found")
+            return None
+        logger.info("Starting simulator: %s --listen %d --hidden", binary, self._port)
+        self._process = await asyncio.create_subprocess_exec(
+            binary, "--listen", str(self._port), "--hidden",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        asyncio.create_task(self._log_stream(self._process.stdout, logging.INFO))
+        asyncio.create_task(self._log_stream(self._process.stderr, logging.WARNING))
+        await asyncio.sleep(0.3)
         self._client = SimClient(port=self._port, on_event_cb=self._handle_sim_event)
         return self._client
 
@@ -94,6 +134,13 @@ class SimProcessManager:
                 logger.warning("Simulator did not exit, sending SIGKILL")
                 self._process.kill()
                 await self._process.wait()
+            self._process = None
+
+    async def kill(self) -> None:
+        """Immediately kill the simulator process without graceful shutdown."""
+        if self._process and self._process.returncode is None:
+            self._process.kill()
+            await self._process.wait()
             self._process = None
 
     async def show_window(self) -> bool:

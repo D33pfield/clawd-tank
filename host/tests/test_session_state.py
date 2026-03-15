@@ -257,7 +257,9 @@ async def test_subagent_start_with_empty_agent_id_ignored():
 
 # --- Task 4 / Task 5: eviction suppression and subagent display state ---
 
-def test_staleness_skips_sessions_with_active_subagents():
+def test_staleness_evicts_sessions_with_dead_subagents():
+    """Stale sessions are evicted even if subagents exist — stale last_event
+    means subagent tool calls stopped refreshing it, so they're dead."""
     d = make_daemon()
     d._session_staleness_timeout = 1
     d._session_states["s1"] = {
@@ -266,19 +268,21 @@ def test_staleness_skips_sessions_with_active_subagents():
         "subagents": {"a1"},
     }
     d._evict_stale_sessions()
-    assert "s1" in d._session_states  # NOT evicted
+    assert "s1" not in d._session_states  # evicted — subagents are dead too
 
 
-def test_staleness_evicts_after_all_subagents_stop():
+def test_staleness_keeps_sessions_with_active_subagents():
+    """Sessions with active subagents stay alive because subagent tool calls
+    refresh last_event via PreToolUse on the parent session."""
     d = make_daemon()
-    d._session_staleness_timeout = 1
+    d._session_staleness_timeout = 600
     d._session_states["s1"] = {
         "state": "idle",
-        "last_event": time.time() - 9999,
-        "subagents": set(),  # empty — all subagents stopped
+        "last_event": time.time(),  # fresh — subagent is active
+        "subagents": {"a1"},
     }
     d._evict_stale_sessions()
-    assert "s1" not in d._session_states  # evicted
+    assert "s1" in d._session_states  # NOT evicted — still fresh
 
 
 def test_idle_session_with_subagents_counts_as_working():
@@ -344,9 +348,10 @@ def test_working_session_with_subagents_counts_once():
     assert d._compute_display_state() == "working_1"
 
 @pytest.mark.asyncio
-async def test_subagent_lifecycle_prevents_sleeping():
-    """Full lifecycle: session starts, spawns subagent, parent goes idle,
-    subagent stops, then session can be evicted."""
+async def test_subagent_lifecycle():
+    """Full lifecycle: subagent keeps session working while active,
+    Stop doesn't clear subagents (background agents may still run),
+    staleness eviction cleans up dead subagents."""
     d = make_daemon()
 
     # Session starts and begins working
@@ -356,30 +361,163 @@ async def test_subagent_lifecycle_prevents_sleeping():
     await d._handle_message({"event": "tool_use", "session_id": "s1"})
     assert d._compute_display_state() == "working_1"
 
-    # Subagent spawned
+    # Subagent spawned — session stays working
     await d._handle_message({"event": "subagent_start", "session_id": "s1", "agent_id": "a1"})
     assert d._compute_display_state() == "working_1"
+    assert "a1" in d._session_states["s1"]["subagents"]
 
-    # Parent goes idle (Stop hook fires) — but subagent still running
+    # Stop fires — session goes idle, but subagent keeps it counted as working
+    # (background agents may still be running after Stop)
     await d._handle_message({
         "event": "add", "hook": "Stop", "session_id": "s1",
         "project": "proj", "message": "Waiting",
     })
-    # Session state is "idle" but subagent keeps it counted as working
     assert d._session_states["s1"]["state"] == "idle"
+    assert "a1" in d._session_states["s1"]["subagents"]
     assert d._compute_display_state() == "working_1"
 
-    # Staleness check — should NOT evict (subagent active)
-    d._session_staleness_timeout = 0  # force everything to be "stale"
-    d._evict_stale_sessions()
-    assert "s1" in d._session_states
-
-    # Subagent finishes
+    # Subagent finishes via SubagentStop
     await d._handle_message({"event": "subagent_stop", "session_id": "s1", "agent_id": "a1"})
+    assert not d._session_states["s1"].get("subagents")
     assert d._compute_display_state() == "idle"
 
-    # Now staleness check CAN evict
+    # Staleness eviction works normally
     d._session_states["s1"]["last_event"] = time.time() - 9999
     d._evict_stale_sessions()
     assert "s1" not in d._session_states
     assert d._compute_display_state() == "sleeping"
+
+
+@pytest.mark.asyncio
+async def test_stale_subagents_evicted_with_session():
+    """Missed SubagentStop hooks don't prevent eviction — if last_event is
+    stale, subagent tool calls stopped refreshing it, so they're dead."""
+    d = make_daemon()
+    d._session_staleness_timeout = 1
+    d._session_states["s1"] = {
+        "state": "idle", "last_event": time.time() - 9999,
+        "subagents": {"orphan1", "orphan2"},
+    }
+    d._evict_stale_sessions()
+    assert "s1" not in d._session_states
+    assert d._compute_display_state() == "sleeping"
+
+
+# --- Session state persistence ---
+
+
+def make_daemon_with_path(sessions_path):
+    """Create a test daemon that uses a custom sessions file path."""
+    d = ClawdDaemon(sim_only=True, sessions_path=sessions_path)
+    d._transports.clear()
+    d._transport_queues.clear()
+    return d
+
+
+@pytest.mark.asyncio
+async def test_daemon_persists_on_handle_message(tmp_path):
+    path = tmp_path / "sessions.json"
+    d = make_daemon_with_path(path)
+    await d._handle_message({"event": "session_start", "session_id": "s1"})
+    assert path.exists()
+    data = json.loads(path.read_text())
+    assert "s1" in data
+    assert data["s1"]["state"] == "registered"
+
+
+@pytest.mark.asyncio
+async def test_daemon_does_not_persist_on_last_event_only_update(tmp_path):
+    """tool_use when already working only updates last_event — no disk write."""
+    path = tmp_path / "sessions.json"
+    d = make_daemon_with_path(path)
+    d._session_states["s1"] = {"state": "working", "last_event": time.time()}
+    d._persist_sessions()  # initial save
+    mtime_before = path.stat().st_mtime_ns
+    import time as _time; _time.sleep(0.01)
+    await d._handle_message({"event": "tool_use", "session_id": "s1"})
+    mtime_after = path.stat().st_mtime_ns
+    assert mtime_before == mtime_after
+
+
+@pytest.mark.asyncio
+async def test_daemon_persists_on_state_transition(tmp_path):
+    """thinking → working is a structural change — should persist."""
+    path = tmp_path / "sessions.json"
+    d = make_daemon_with_path(path)
+    d._session_states["s1"] = {"state": "thinking", "last_event": time.time()}
+    await d._handle_message({"event": "tool_use", "session_id": "s1"})
+    data = json.loads(path.read_text())
+    assert data["s1"]["state"] == "working"
+
+
+def test_daemon_persists_on_eviction(tmp_path):
+    path = tmp_path / "sessions.json"
+    d = make_daemon_with_path(path)
+    d._session_states["s1"] = {"state": "idle", "last_event": time.time() - 9999}
+    d._session_staleness_timeout = 1
+    d._evict_stale_sessions()
+    data = json.loads(path.read_text())
+    assert "s1" not in data
+
+
+def test_daemon_loads_on_init(tmp_path):
+    path = tmp_path / "sessions.json"
+    path.write_text(json.dumps({
+        "s1": {"state": "working", "last_event": time.time()},
+    }))
+    d = ClawdDaemon(sim_only=True, sessions_path=path)
+    d._transports.clear()
+    d._transport_queues.clear()
+    assert "s1" in d._session_states
+    assert d._session_states["s1"]["state"] == "working"
+
+
+def test_daemon_loads_subagents_as_sets(tmp_path):
+    path = tmp_path / "sessions.json"
+    path.write_text(json.dumps({
+        "s1": {
+            "state": "idle",
+            "last_event": time.time(),
+            "subagents": ["a1", "a2"],
+        },
+    }))
+    d = ClawdDaemon(sim_only=True, sessions_path=path)
+    d._transports.clear()
+    d._transport_queues.clear()
+    assert d._session_states["s1"]["subagents"] == {"a1", "a2"}
+    assert isinstance(d._session_states["s1"]["subagents"], set)
+
+
+def test_daemon_startup_display_state_from_loaded_sessions(tmp_path):
+    path = tmp_path / "sessions.json"
+    path.write_text(json.dumps({
+        "s1": {"state": "working", "last_event": time.time()},
+    }))
+    d = ClawdDaemon(sim_only=True, sessions_path=path)
+    d._transports.clear()
+    d._transport_queues.clear()
+    assert d._compute_display_state() == "working_1"
+
+
+def test_daemon_evicts_stale_sessions_on_startup(tmp_path):
+    """Stale sessions from disk are evicted immediately, not after 30s."""
+    path = tmp_path / "sessions.json"
+    path.write_text(json.dumps({
+        "stale": {"state": "working", "last_event": time.time() - 9999},
+        "fresh": {"state": "idle", "last_event": time.time()},
+    }))
+    d = ClawdDaemon(sim_only=True, sessions_path=path)
+    d._transports.clear()
+    d._transport_queues.clear()
+    assert "stale" not in d._session_states
+    assert "fresh" in d._session_states
+
+
+@pytest.mark.asyncio
+async def test_session_end_persists_removal(tmp_path):
+    path = tmp_path / "sessions.json"
+    d = make_daemon_with_path(path)
+    await d._handle_message({"event": "session_start", "session_id": "s1"})
+    await d._handle_message({"event": "dismiss", "hook": "SessionEnd", "session_id": "s1"})
+    data = json.loads(path.read_text())
+    assert "s1" not in data

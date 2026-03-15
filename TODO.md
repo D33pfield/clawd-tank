@@ -1,10 +1,10 @@
 # Clawd Notification Display — TODO
 
-## Status (v1.1.0)
+## Status (v1.2.1)
 
 Firmware builds, flashes, and runs on the Waveshare ESP32-C6-LCD-1.47 board.
 BLE advertising works, notifications can be sent and dismissed via BLE GATT writes.
-23 C tests pass (with ASan+UBSan), 98 Python tests pass (8 test files).
+23 C tests pass (with ASan+UBSan), 152 Python tests pass (11 test files).
 Clawd sprite animations and notification card UI are implemented.
 NVS-backed config store supports brightness and session timeout with BLE read/write.
 macOS menu bar app provides daemon control, device configuration UI, and simulator toggle.
@@ -14,6 +14,10 @@ Session-aware working animations driven by Claude Code hooks with intensity tier
 11 animated sprites integrated into scene.c (5 original + 6 working animations).
 Session state tracking in daemon with priority-based display state computation.
 Staleness eviction replaces timer-based sleep — sleep is now session-driven.
+Subagent lifecycle tracking prevents sleeping during long-running agent tasks.
+Session state persisted to disk — restarting the app preserves display state.
+Build script (`host/build.sh`) automates simulator + py2app + bundle.
+Auto-update hooks, daemon health monitoring, orphan sim cleanup, launchd auto-migration.
 
 ---
 
@@ -82,6 +86,19 @@ Staleness eviction replaces timer-based sleep — sleep is now session-driven.
 - [x] **Per-session subagent tracking** — `subagents: set[agent_id]` tracked per session in daemon state dict.
 - [x] **Eviction suppression** — Sessions with active subagents are never evicted by staleness checker.
 - [x] **Display state integration** — Sessions with active subagents count as "working" in display state computation, preventing Clawd from sleeping during long subagent tasks.
+
+## Session State Persistence (v1.2.0) — Complete
+
+- [x] **Atomic session state save/load** — `save_sessions()`/`load_sessions()` in `session_store.py` serialize session state dict to `~/.clawd-tank/sessions.json` with set↔list conversion. Atomic writes via temp file + `os.replace`.
+- [x] **Smart persistence** — Session state saved only on structural changes (state transitions, subagent add/remove), not on every `last_event` timestamp update. Reduces disk writes during heavy tool use.
+- [x] **Daemon startup recovery** — Loads saved sessions on init with immediate staleness eviction. Restarting the menu bar app immediately shows correct animation for running Claude Code sessions.
+
+## Daemon Resilience (v1.2.1) — Complete
+
+- [x] **Auto-update hooks on startup** — Hooks are checked and updated automatically on app launch when outdated, removing the need for manual "Install Hooks" clicks after code updates.
+- [x] **Daemon thread crash logging** — Daemon thread exceptions are caught and logged instead of dying silently. Periodic health check timer detects dead daemon and shows disconnected icon.
+- [x] **Orphaned sim process cleanup** — On startup, orphaned simulator processes on the listen port are identified by name and killed instead of being connected to.
+- [x] **Display state sync on replay** — `_last_display_state` is updated after transport replay to prevent duplicate broadcasts.
 
 ## Future Considerations (Out of Scope)
 
