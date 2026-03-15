@@ -173,8 +173,10 @@ class ClawdTankApp(rumps.App, DaemonObserver):
                 asyncio.set_event_loop(self._loop)
                 self._loop_ready.set()
                 self._loop.run_until_complete(self._daemon.run())
+                logger.info("Daemon thread exited normally")
             except Exception:
                 logger.exception("Daemon thread crashed")
+            finally:
                 self._loop_ready.set()  # unblock main thread if still waiting
 
         self._daemon_thread = threading.Thread(target=run_loop, daemon=True)
@@ -490,6 +492,7 @@ class ClawdTankApp(rumps.App, DaemonObserver):
             rumps.quit_application()
         except Exception:
             logger.exception("Error during quit, force-killing")
+            logging.shutdown()
             os._exit(1)
 
 

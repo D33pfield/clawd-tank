@@ -475,6 +475,7 @@ class ClawdDaemon:
         self._staleness_task = asyncio.create_task(self._staleness_checker())
 
         await self._shutdown_event.wait()
+        logger.info("Daemon run() finished")
 
 
 def main():
