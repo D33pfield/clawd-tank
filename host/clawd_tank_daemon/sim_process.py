@@ -54,7 +54,7 @@ class SimProcessManager:
 
     async def _kill_orphaned_sim(self) -> None:
         """Kill any orphaned clawd-tank-sim processes listening on our port."""
-        try:
+        def _do_kill():
             result = subprocess.run(
                 ["lsof", "-ti", f":{self._port}"],
                 capture_output=True, text=True, timeout=5,
@@ -75,7 +75,10 @@ class SimProcessManager:
                     continue
                 logger.info("Killing orphaned clawd-tank-sim (PID %d) on port %d", pid, self._port)
                 os.kill(pid, signal.SIGKILL)
-        except (subprocess.TimeoutExpired, ValueError, ProcessLookupError, PermissionError):
+        try:
+            await asyncio.to_thread(_do_kill)
+        except (subprocess.TimeoutExpired, ValueError, ProcessLookupError,
+                PermissionError, FileNotFoundError, OSError):
             pass
 
     async def _log_stream(self, stream, level) -> None:
