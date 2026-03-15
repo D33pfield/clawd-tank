@@ -15,6 +15,7 @@
 
 ### Changed
 
+- **Building animation** — Updated sprite with improved visuals.
 - **Version numbering on master** — Commit count now measured against `origin/master` (unpushed commits) instead of local `master` (always 0).
 - **CI workflow** — `build-macos-app.yml` now builds the static simulator and bundles it into the `.app`, matching `release.yml`.
 
