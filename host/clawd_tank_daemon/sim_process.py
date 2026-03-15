@@ -51,14 +51,14 @@ class SimProcessManager:
         if self._on_window_event:
             self._on_window_event(event)
 
-    async def _log_stderr(self) -> None:
-        if not self._process or not self._process.stderr:
+    async def _log_stream(self, stream, level) -> None:
+        if not stream:
             return
         try:
-            async for line in self._process.stderr:
+            async for line in stream:
                 text = line.decode("utf-8", errors="replace").rstrip()
                 if text:
-                    logger.warning("[sim-stderr] %s", text)
+                    logger.log(level, "%s", text)
         except (ValueError, asyncio.CancelledError):
             pass
 
@@ -73,10 +73,11 @@ class SimProcessManager:
             logger.info("Starting simulator: %s --listen %d --hidden", binary, self._port)
             self._process = await asyncio.create_subprocess_exec(
                 binary, "--listen", str(self._port), "--hidden",
-                stdout=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            asyncio.create_task(self._log_stderr())
+            asyncio.create_task(self._log_stream(self._process.stdout, logging.INFO))
+            asyncio.create_task(self._log_stream(self._process.stderr, logging.WARNING))
             await asyncio.sleep(0.3)
         self._client = SimClient(port=self._port, on_event_cb=self._handle_sim_event)
         return self._client

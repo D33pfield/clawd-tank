@@ -86,7 +86,7 @@ class ClawdTankApp(rumps.App, DaemonObserver):
             self._sim_pinned_toggle,
         ])
 
-        # Brightness slider — rumps MenuItem with custom NSView
+        # Brightness slider - rumps MenuItem with custom NSView
         self._brightness_slider = create_slider_menu_item(
             "Brightness", min_val=0, max_val=255, initial=102,
             on_change=self._on_brightness_change,
@@ -121,7 +121,7 @@ class ClawdTankApp(rumps.App, DaemonObserver):
         if launchd.is_enabled() and launchd.is_stale():
             self._login_item.title = "Launch at Login (needs update)"
             logger.warning(
-                "Launchd plist points to a different executable — user should re-enable Launch at Login"
+                "Launchd plist points to a different executable - user should re-enable Launch at Login"
             )
 
         # Version
@@ -427,7 +427,7 @@ class ClawdTankApp(rumps.App, DaemonObserver):
             if client:
                 await self._daemon.add_transport("sim", client)
                 # Wait for the sender task to establish the TCP connection.
-                # Don't call ensure_connected() here — it races with the
+                # Don't call ensure_connected() here - it races with the
                 # sender task's connect() and causes duplicate background readers.
                 for _ in range(100):  # up to 10 seconds
                     if client.is_connected:
@@ -456,17 +456,23 @@ class ClawdTankApp(rumps.App, DaemonObserver):
     def _on_quit(self, _):
         try:
             if self._loop and self._daemon:
-                if self._sim_process:
-                    # Wait for simulator to stop before shutting down daemon
-                    future = asyncio.run_coroutine_threadsafe(
-                        self._sim_process.stop(), self._loop
-                    )
-                    future.result(timeout=5)
-                    self._sim_process = None
+                async def _shutdown_all():
+                    # Remove sim transport from daemon first (avoids double-disconnect)
+                    if "sim" in self._daemon._transports:
+                        await self._daemon.remove_transport("sim")
+                    # Kill sim process (client already disconnected, just kill the process)
+                    if self._sim_process:
+                        proc = self._sim_process._process
+                        if proc and proc.returncode is None:
+                            proc.kill()
+                            await proc.wait()
+                        self._sim_process = None
+                    # Now shut down daemon (BLE disconnect, socket cleanup)
+                    await self._daemon._shutdown()
                 future = asyncio.run_coroutine_threadsafe(
-                    self._daemon._shutdown(), self._loop
+                    _shutdown_all(), self._loop
                 )
-                future.result(timeout=5)
+                future.result(timeout=8)
             rumps.quit_application()
         except Exception:
             logger.exception("Error during quit, force-killing")
