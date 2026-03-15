@@ -11,11 +11,7 @@ from clawd_tank_daemon.daemon import ClawdDaemon
 
 def make_daemon():
     """Create a daemon in sim-only mode with no actual transport."""
-    import tempfile
-    from pathlib import Path
-    # Use a temp dir so no sessions are loaded from disk and saves work
-    tmp = tempfile.mkdtemp()
-    d = ClawdDaemon(sim_only=True, sessions_path=Path(tmp) / "sessions.json")
+    d = ClawdDaemon(sim_only=True)
     d._transports.clear()
     d._transport_queues.clear()
     return d

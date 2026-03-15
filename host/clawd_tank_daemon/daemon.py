@@ -16,7 +16,8 @@ from .protocol import daemon_message_to_ble_payload
 from .sim_client import SimClient, SIM_DEFAULT_PORT
 from .socket_server import SocketServer
 from .transport import TransportClient
-from .session_store import save_sessions, load_sessions, SESSIONS_PATH
+from . import session_store
+from .session_store import save_sessions, load_sessions
 
 logger = logging.getLogger("clawd-tank")
 
@@ -91,7 +92,7 @@ class ClawdDaemon:
         headless: bool = True,
         sim_port: int = 0,
         sim_only: bool = False,
-        sessions_path: Path = SESSIONS_PATH,
+        sessions_path: Optional[Path] = None,
     ):
         self._transports: dict[str, TransportClient] = {}
         self._transport_queues: dict[str, asyncio.Queue] = {}
@@ -124,7 +125,7 @@ class ClawdDaemon:
         self._lock_fd: int | None = None
         self._observer = observer
         self._headless = headless
-        self._sessions_path = sessions_path
+        self._sessions_path = sessions_path if sessions_path is not None else session_store.SESSIONS_PATH
         self._session_states: dict[str, dict] = load_sessions(self._sessions_path)
         self._last_display_state: str = "sleeping"
         self._session_staleness_timeout: float = 600.0
