@@ -25,6 +25,8 @@ void scene_set_time_visible(scene_t *scene, bool visible);
 void scene_update_time(scene_t *scene, int hour, int minute);
 void scene_tick(scene_t *scene);
 bool scene_is_playing_oneshot(scene_t *scene);
+void scene_set_sessions(scene_t *scene, const uint8_t *anims, const uint16_t *ids,
+                        int count, uint8_t subagent_count, uint8_t overflow);
 #ifdef SIMULATOR
 void scene_get_anim_info(scene_t *scene, int *frame_count, int *frame_ms);
 int scene_get_frame_idx(scene_t *scene);

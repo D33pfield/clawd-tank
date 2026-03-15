@@ -172,6 +172,23 @@ static const anim_def_t anim_defs[] = {
     },
 };
 
+/* ---------- Multi-slot support ---------- */
+
+#define MAX_SLOTS 4
+
+typedef struct {
+    lv_obj_t *sprite_img;
+    lv_image_dsc_t frame_dsc;
+    uint8_t *frame_buf;
+    int frame_buf_size;
+    clawd_anim_id_t cur_anim;
+    clawd_anim_id_t fallback_anim;
+    int frame_idx;
+    uint32_t last_frame_tick;
+    uint16_t display_id;   /* stable ID from daemon, for diffing */
+    bool active;
+} clawd_slot_t;
+
 /* ---------- Star config ---------- */
 
 static const struct {
@@ -201,15 +218,9 @@ struct scene_t {
     /* Grass */
     lv_obj_t *grass;
 
-    /* Clawd sprite */
-    lv_obj_t *sprite_img;
-    lv_image_dsc_t frame_dsc;     /* single frame descriptor */
-    uint8_t *frame_buf;           /* single ARGB8888 buffer */
-    int frame_buf_size;           /* current buffer size in bytes */
-    clawd_anim_id_t cur_anim;
-    int frame_idx;
-    uint32_t last_frame_tick;
-    clawd_anim_id_t fallback_anim;  /* animation to return to after oneshot */
+    /* Clawd sprite slots (1 per visible session) */
+    clawd_slot_t slots[MAX_SLOTS];
+    int active_slot_count;
 
     /* Time label */
     lv_obj_t *time_label;
@@ -220,40 +231,40 @@ struct scene_t {
 
 /* ---------- Helpers ---------- */
 
-static void ensure_frame_buf(scene_t *s, int w, int h)
+static void ensure_frame_buf(clawd_slot_t *slot, int w, int h)
 {
     int needed = w * h * 4; /* ARGB8888 */
-    if (s->frame_buf && s->frame_buf_size >= needed) return;
-    free(s->frame_buf);
-    s->frame_buf = malloc(needed);
-    s->frame_buf_size = s->frame_buf ? needed : 0;
+    if (slot->frame_buf && slot->frame_buf_size >= needed) return;
+    free(slot->frame_buf);
+    slot->frame_buf = malloc(needed);
+    slot->frame_buf_size = slot->frame_buf ? needed : 0;
 }
 
-static void decode_and_apply_frame(scene_t *s)
+static void decode_and_apply_frame(clawd_slot_t *slot)
 {
-    const anim_def_t *def = &anim_defs[s->cur_anim];
-    int idx = s->frame_idx;
+    const anim_def_t *def = &anim_defs[slot->cur_anim];
+    int idx = slot->frame_idx;
     if (idx >= def->frame_count) idx = def->frame_count - 1;
 
     int w = def->width;
     int h = def->height;
-    ensure_frame_buf(s, w, h);
-    if (!s->frame_buf) return;
+    ensure_frame_buf(slot, w, h);
+    if (!slot->frame_buf) return;
 
     /* Decompress this frame's RLE directly to ARGB8888 */
     const uint16_t *frame_rle = &def->rle_data[def->frame_offsets[idx]];
-    rle_decode_argb8888(frame_rle, s->frame_buf, w * h, TRANSPARENT_KEY);
+    rle_decode_argb8888(frame_rle, slot->frame_buf, w * h, TRANSPARENT_KEY);
 
     /* Update the LVGL image descriptor */
-    s->frame_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
-    s->frame_dsc.header.w = w;
-    s->frame_dsc.header.h = h;
-    s->frame_dsc.header.cf = LV_COLOR_FORMAT_ARGB8888;
-    s->frame_dsc.header.stride = w * 4;
-    s->frame_dsc.data = s->frame_buf;
-    s->frame_dsc.data_size = w * h * 4;
+    slot->frame_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+    slot->frame_dsc.header.w = w;
+    slot->frame_dsc.header.h = h;
+    slot->frame_dsc.header.cf = LV_COLOR_FORMAT_ARGB8888;
+    slot->frame_dsc.header.stride = w * 4;
+    slot->frame_dsc.data = slot->frame_buf;
+    slot->frame_dsc.data_size = w * h * 4;
 
-    lv_image_set_src(s->sprite_img, &s->frame_dsc);
+    lv_image_set_src(slot->sprite_img, &slot->frame_dsc);
 }
 
 static uint32_t random_range(uint32_t min_val, uint32_t max_val)
@@ -264,6 +275,39 @@ static uint32_t random_range(uint32_t min_val, uint32_t max_val)
 static void width_anim_cb(void *var, int32_t val)
 {
     lv_obj_set_width((lv_obj_t *)var, val);
+}
+
+/* ---------- Slot helpers ---------- */
+
+static void scene_activate_slot(scene_t *s, int idx, clawd_anim_id_t anim)
+{
+    clawd_slot_t *slot = &s->slots[idx];
+    if (!slot->sprite_img) {
+        slot->sprite_img = lv_image_create(s->container);
+        lv_image_set_inner_align(slot->sprite_img, LV_IMAGE_ALIGN_CENTER);
+    }
+    slot->active = true;
+    slot->cur_anim = anim;
+    slot->fallback_anim = anim;
+    slot->frame_idx = 0;
+    slot->last_frame_tick = lv_tick_get();
+    decode_and_apply_frame(slot);
+    const anim_def_t *def = &anim_defs[anim];
+    lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
+    lv_obj_clear_flag(slot->sprite_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_opa(slot->sprite_img, LV_OPA_COVER, 0);
+}
+
+static void scene_deactivate_slot(scene_t *s, int idx)
+{
+    clawd_slot_t *slot = &s->slots[idx];
+    slot->active = false;
+    if (slot->sprite_img) {
+        lv_obj_add_flag(slot->sprite_img, LV_OBJ_FLAG_HIDDEN);
+    }
+    free(slot->frame_buf);
+    slot->frame_buf = NULL;
+    slot->frame_buf_size = 0;
 }
 
 /* ---------- Create ---------- */
@@ -326,17 +370,16 @@ scene_t *scene_create(lv_obj_t *parent)
         lv_obj_set_style_bg_color(tuft, lv_color_hex(0x3d6a3d), 0);
     }
 
-    /* Clawd sprite image — y_offset per animation pushes feet into grass */
-    s->sprite_img = lv_image_create(s->container);
-    lv_obj_align(s->sprite_img, LV_ALIGN_BOTTOM_MID, 0, anim_defs[CLAWD_ANIM_IDLE].y_offset);
-    lv_image_set_inner_align(s->sprite_img, LV_IMAGE_ALIGN_CENTER);
-
-    /* Set up idle animation as default */
-    s->cur_anim = CLAWD_ANIM_IDLE;
-    s->fallback_anim = CLAWD_ANIM_IDLE;
-    s->frame_idx = 0;
-    s->last_frame_tick = lv_tick_get();
-    decode_and_apply_frame(s);
+    /* Clawd sprite slots — initialize all, activate slot 0 */
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        s->slots[i].active = false;
+        s->slots[i].sprite_img = NULL;
+        s->slots[i].frame_buf = NULL;
+        s->slots[i].frame_buf_size = 0;
+        s->slots[i].display_id = 0;
+    }
+    s->active_slot_count = 1;
+    scene_activate_slot(s, 0, CLAWD_ANIM_IDLE);
 
     /* Time label — top-right */
     s->time_label = lv_label_create(s->container);
@@ -383,25 +426,27 @@ void scene_set_width(scene_t *scene, int width_px, int anim_ms)
 void scene_set_clawd_anim(scene_t *scene, clawd_anim_id_t anim)
 {
     if (!scene) return;
-    if (anim == scene->cur_anim) return;
+    clawd_slot_t *slot = &scene->slots[0];
+    if (!slot->active) return;
+    if (anim == slot->cur_anim) return;
 
-    scene->cur_anim = anim;
-    scene->frame_idx = 0;
-    scene->last_frame_tick = lv_tick_get();
+    slot->cur_anim = anim;
+    slot->frame_idx = 0;
+    slot->last_frame_tick = lv_tick_get();
 
     const anim_def_t *def = &anim_defs[anim];
-    decode_and_apply_frame(scene);
+    decode_and_apply_frame(slot);
 
     /* Re-align sprite for this animation's ground offset */
-    lv_obj_align(scene->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
+    lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
 
     /* Disconnected state: desaturate + show no-connection label */
     if (anim == CLAWD_ANIM_DISCONNECTED) {
-        lv_obj_set_style_image_recolor(scene->sprite_img, lv_color_hex(0x888888), 0);
-        lv_obj_set_style_image_recolor_opa(scene->sprite_img, LV_OPA_30, 0);
+        lv_obj_set_style_image_recolor(slot->sprite_img, lv_color_hex(0x888888), 0);
+        lv_obj_set_style_image_recolor_opa(slot->sprite_img, LV_OPA_30, 0);
         lv_obj_clear_flag(scene->noconn_label, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_set_style_image_recolor_opa(scene->sprite_img, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_image_recolor_opa(slot->sprite_img, LV_OPA_TRANSP, 0);
         lv_obj_add_flag(scene->noconn_label, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -409,7 +454,7 @@ void scene_set_clawd_anim(scene_t *scene, clawd_anim_id_t anim)
 void scene_set_fallback_anim(scene_t *scene, clawd_anim_id_t anim)
 {
     if (!scene) return;
-    scene->fallback_anim = anim;
+    scene->slots[0].fallback_anim = anim;
 }
 
 /* ---------- Time ---------- */
@@ -436,25 +481,31 @@ void scene_tick(scene_t *scene)
     if (!scene) return;
 
     uint32_t now = lv_tick_get();
-    const anim_def_t *def = &anim_defs[scene->cur_anim];
 
-    /* Advance sprite frame */
-    uint32_t elapsed = now - scene->last_frame_tick;
-    if (elapsed >= (uint32_t)def->frame_ms) {
-        scene->last_frame_tick = now;
+    /* Advance sprite frames for all active slots */
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        clawd_slot_t *slot = &scene->slots[i];
+        if (!slot->active) continue;
 
-        if (def->looping) {
-            scene->frame_idx = (scene->frame_idx + 1) % def->frame_count;
-        } else {
-            if (scene->frame_idx < def->frame_count - 1) {
-                scene->frame_idx++;
+        const anim_def_t *def = &anim_defs[slot->cur_anim];
+        uint32_t elapsed = now - slot->last_frame_tick;
+        if (elapsed >= (uint32_t)def->frame_ms) {
+            slot->last_frame_tick = now;
+
+            if (def->looping) {
+                slot->frame_idx = (slot->frame_idx + 1) % def->frame_count;
             } else {
-                /* Oneshot finished — auto-return to fallback */
-                scene_set_clawd_anim(scene, scene->fallback_anim);
-                return;
+                if (slot->frame_idx < def->frame_count - 1) {
+                    slot->frame_idx++;
+                } else {
+                    /* Oneshot finished — auto-return to fallback */
+                    slot->cur_anim = slot->fallback_anim;
+                    slot->frame_idx = 0;
+                    slot->last_frame_tick = now;
+                }
             }
+            decode_and_apply_frame(slot);
         }
-        decode_and_apply_frame(scene);
     }
 
     /* Star twinkle */
@@ -473,16 +524,50 @@ void scene_tick(scene_t *scene)
 bool scene_is_playing_oneshot(scene_t *scene)
 {
     if (!scene) return false;
-    const anim_def_t *def = &anim_defs[scene->cur_anim];
+    clawd_slot_t *slot = &scene->slots[0];
+    if (!slot->active) return false;
+    const anim_def_t *def = &anim_defs[slot->cur_anim];
     if (def->looping) return false;
-    return scene->frame_idx < def->frame_count - 1;
+    return slot->frame_idx < def->frame_count - 1;
+}
+
+/* ---------- Multi-session positioning ---------- */
+
+static const int x_centers[][4] = {
+    {160},              /* 1 session */
+    {107, 213},         /* 2 sessions */
+    {80, 160, 240},     /* 3 sessions */
+    {64, 128, 192, 256} /* 4 sessions */
+};
+
+void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
+                        int count, uint8_t subagent_count, uint8_t overflow)
+{
+    if (!s) return;
+    if (count < 1) count = 1;
+    if (count > MAX_SLOTS) count = MAX_SLOTS;
+
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        if (i < count) {
+            scene_activate_slot(s, i, (clawd_anim_id_t)anims[i]);
+            s->slots[i].display_id = ids[i];
+            int cx = x_centers[count - 1][i];
+            const anim_def_t *def = &anim_defs[anims[i]];
+            lv_obj_set_pos(s->slots[i].sprite_img, cx - def->width / 2,
+                           SCENE_HEIGHT - def->height + def->y_offset);
+        } else {
+            scene_deactivate_slot(s, i);
+        }
+    }
+    s->active_slot_count = count;
 }
 
 #ifdef SIMULATOR
 void scene_get_anim_info(scene_t *scene, int *frame_count, int *frame_ms)
 {
     if (!scene) { *frame_count = 0; *frame_ms = 0; return; }
-    const anim_def_t *def = &anim_defs[scene->cur_anim];
+    clawd_slot_t *slot = &scene->slots[0];
+    const anim_def_t *def = &anim_defs[slot->cur_anim];
     *frame_count = def->frame_count;
     *frame_ms = def->frame_ms;
 }
@@ -490,6 +575,6 @@ void scene_get_anim_info(scene_t *scene, int *frame_count, int *frame_ms)
 int scene_get_frame_idx(scene_t *scene)
 {
     if (!scene) return 0;
-    return scene->frame_idx;
+    return scene->slots[0].frame_idx;
 }
 #endif
