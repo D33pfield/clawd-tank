@@ -119,10 +119,8 @@ class ClawdTankApp(rumps.App, DaemonObserver):
         self._login_item.state = launchd.is_enabled()
 
         if launchd.is_enabled() and launchd.is_stale():
-            self._login_item.title = "Launch at Login (needs update)"
-            logger.warning(
-                "Launchd plist points to a different executable - user should re-enable Launch at Login"
-            )
+            logger.info("Launchd plist is stale, updating to current executable")
+            launchd.enable()
 
         # Version
         self._version_item = rumps.MenuItem(f"Version: {get_version()}")
