@@ -232,8 +232,11 @@ void ui_manager_handle_event(const ble_evt_t *evt)
         break;
 
     case BLE_EVT_SET_SESSIONS: {
-        ESP_LOGI(TAG, "Set sessions: %d anims, %d subagents, %d overflow",
-                 evt->session_anim_count, evt->subagent_count, evt->session_overflow);
+        ESP_LOGI(TAG, "Set sessions: %d anims (anim0=%d), %d subagents, %d overflow → %s path",
+                 evt->session_anim_count,
+                 evt->session_anim_count > 0 ? evt->session_anims[0] : -1,
+                 evt->subagent_count, evt->session_overflow,
+                 (evt->session_anim_count == 1 && evt->subagent_count == 0 && evt->session_overflow == 0) ? "LEGACY" : "MULTI");
 
         /* Wake from sleep if needed */
         if (s_display_status == DISPLAY_STATUS_SLEEPING) {

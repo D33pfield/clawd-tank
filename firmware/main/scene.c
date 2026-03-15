@@ -332,6 +332,7 @@ static void scene_activate_slot(scene_t *s, int idx, clawd_anim_id_t anim)
     slot->last_frame_tick = lv_tick_get();
     decode_and_apply_frame(slot);
     const anim_def_t *def = &anim_defs[anim];
+    lv_obj_set_size(slot->sprite_img, def->width, def->height);
     lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
     lv_obj_clear_flag(slot->sprite_img, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_opa(slot->sprite_img, LV_OPA_COVER, 0);
@@ -486,7 +487,8 @@ void scene_set_clawd_anim(scene_t *scene, clawd_anim_id_t anim)
     const anim_def_t *def = &anim_defs[anim];
     decode_and_apply_frame(slot);
 
-    /* Re-align sprite for this animation's ground offset */
+    /* Force widget size to match sprite dimensions, then re-align */
+    lv_obj_set_size(slot->sprite_img, def->width, def->height);
     lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
 
     /* Disconnected state: desaturate + show no-connection label */
