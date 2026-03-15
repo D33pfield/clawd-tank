@@ -213,9 +213,6 @@ class ClawdDaemon:
             self._session_states.setdefault(session_id, {"state": "idle", "last_event": now})
             if hook == "Stop":
                 self._session_states[session_id]["state"] = "idle"
-                # Clear subagents — if Claude stopped, all subagents are done.
-                # Handles missed SubagentStop hooks (daemon restart, worktree agents).
-                self._session_states[session_id].pop("subagents", None)
             elif hook == "Notification":
                 self._session_states[session_id]["state"] = "confused"
             self._session_states[session_id]["last_event"] = now
@@ -249,11 +246,12 @@ class ClawdDaemon:
         return cur["state"] != prev_state or cur.get("subagents", set()) != (prev_subagents or set())
 
     def _evict_stale_sessions(self) -> None:
+        # Active subagents refresh last_event via PreToolUse on the parent session.
+        # If last_event is stale, subagents are dead too — safe to evict.
         now = time.time()
         stale = [
             sid for sid, s in self._session_states.items()
             if now - s["last_event"] > self._session_staleness_timeout
-            and not s.get("subagents")
         ]
         for sid in stale:
             logger.info("Evicting stale session: %s", sid[:12])
