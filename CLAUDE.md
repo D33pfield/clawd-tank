@@ -164,6 +164,7 @@ The daemon tracks per-session state and computes a single display state sent to 
 - **Special events**: `PreCompact` → oneshot sweeping animation, `Notification` (idle_prompt) → confused
 - **Staleness eviction**: Sessions with no events within the configurable timeout (default 10min) are evicted. No sessions = sleeping.
 - **Subagent tracking**: `SubagentStart`/`SubagentStop` hooks track active `agent_id`s per session. Sessions with active subagents are never evicted and count as "working" in display state.
+- **Session persistence**: Session state is saved atomically to `~/.clawd-tank/sessions.json` on structural state changes. Daemon loads saved state on startup with immediate stale session eviction, so restarting the menu bar app preserves the correct display state for running Claude Code sessions.
 
 ## Key Constraints
 
