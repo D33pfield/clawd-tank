@@ -135,11 +135,13 @@ A single new action replaces `set_status` for the multi-session case. The daemon
 {
   "action": "set_sessions",
   "anims": ["typing", "thinking"],
+  "ids": [1, 2],
   "subagents": 3
 }
 ```
 
 - `anims`: Ordered list of animation names, one per visible session. **Ordered by session arrival time** (oldest first) — this preserves spatial consistency so each Clawd stays in the same position across updates. Max 4 entries. When there are more than 4 sessions, the daemon keeps the 4 oldest and puts the rest in `overflow`. If a middle session ends, later sessions shift down (e.g., sessions [A, B, C] → B ends → [A, C]). Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
+- `ids`: Stable numeric IDs matching each entry in `anims`. The daemon assigns an incrementing integer to each session on arrival (never reused). The firmware stores the previous `ids` array and diffs against the new one to determine which Clawds were added (walk in) and which were removed (fade out). This makes the protocol stateless — the firmware can always reconstruct the correct display from a single message, even after reconnection.
 - `subagents`: Total active subagent count across all sessions.
 
 The firmware derives session count from `len(anims)`, overflow count from the optional `overflow` field:
@@ -148,6 +150,7 @@ The firmware derives session count from `len(anims)`, overflow count from the op
 {
   "action": "set_sessions",
   "anims": ["typing", "thinking", "building", "idle"],
+  "ids": [1, 2, 4, 5],
   "subagents": 5,
   "overflow": 2
 }
@@ -181,6 +184,7 @@ typedef struct {
         struct {
             uint8_t anim_count;
             uint8_t anims[MAX_VISIBLE_SESSIONS]; /* clawd_anim_id_t values */
+            uint16_t ids[MAX_VISIBLE_SESSIONS];  /* stable session IDs for diff */
             uint8_t subagent_count;
             uint8_t overflow;
         } sessions;
@@ -200,9 +204,9 @@ The `parse_notification_json()` function in `ble_service.c` (and `sim_ble_parse.
 
 Worst-case payload (4 sessions, overflow, high subagent count):
 ```json
-{"action":"set_sessions","anims":["typing","thinking","building","idle"],"subagents":12,"overflow":3}
+{"action":"set_sessions","anims":["typing","thinking","building","idle"],"ids":[1,2,4,5],"subagents":12,"overflow":3}
 ```
-Length: ~95 bytes. Well within the 256-byte BLE MTU limit.
+Length: ~112 bytes. Well within the 256-byte BLE MTU limit.
 
 #### Simulator TCP Parser
 
@@ -282,11 +286,12 @@ def _compute_display_state(self) -> dict:
     if not self._session_states:
         return {"status": "sleeping"}
 
-    # Session order is preserved by _session_order list (maintained on
-    # session_start/subagent_start — append new, remove on SessionEnd).
-    # This ensures Clawds stay in consistent positions across updates.
+    # _session_order: list of (session_id, display_id) tuples, ordered by arrival.
+    # display_id is an incrementing integer (self._next_display_id) assigned on
+    # session arrival, never reused. This enables firmware-side diffing.
     anims = []
-    for sid in self._session_order[:MAX_VISIBLE]:
+    ids = []
+    for sid, did in self._session_order[:MAX_VISIBLE]:
         s = self._session_states.get(sid)
         if not s:
             continue
@@ -299,6 +304,7 @@ def _compute_display_state(self) -> dict:
             anims.append("confused")
         else:
             anims.append("idle")
+        ids.append(did)
 
     total_subagents = sum(
         len(s.get("subagents", set()))
@@ -308,13 +314,13 @@ def _compute_display_state(self) -> dict:
     total_sessions = len(self._session_states)
     overflow = max(0, total_sessions - MAX_VISIBLE)
 
-    result = {"anims": anims, "subagents": total_subagents}
+    result = {"anims": anims, "ids": ids, "subagents": total_subagents}
     if overflow > 0:
         result["overflow"] = overflow
     return result
 ```
 
-The daemon maintains `self._session_order: list[str]` — an ordered list of session IDs by arrival time. New sessions are appended; ended sessions are removed (later sessions shift down). This list is the source of truth for the `anims` array ordering, ensuring spatial consistency on the display.
+The daemon maintains `self._session_order: list[tuple[str, int]]` — an ordered list of `(session_id, display_id)` tuples by arrival time. New sessions are appended with `self._next_display_id` (incrementing, never reused); ended sessions are removed (later sessions shift down). The `display_id` is included in the `ids` field of the payload, enabling the firmware to diff and determine which Clawds were added or removed.
 
 Change detection in `_broadcast_display_state_if_changed()`: compare the new dict against `self._last_display_state` using `==`. `_last_display_state` changes from `str` to `dict`.
 

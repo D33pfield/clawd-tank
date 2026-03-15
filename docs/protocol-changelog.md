@@ -11,11 +11,13 @@ Protocol version is exposed by the firmware via a read-only BLE GATT characteris
 {
   "action": "set_sessions",
   "anims": ["typing", "thinking"],
+  "ids": [1, 2],
   "subagents": 3,
   "overflow": 2
 }
 ```
-- `anims` — ordered list of per-session animation names (max 4, highest priority first). Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
+- `anims` — ordered list of per-session animation names (max 4, ordered by session arrival time). Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
+- `ids` — stable numeric IDs matching each entry in `anims`. Assigned incrementally by the daemon on session arrival (never reused). The firmware diffs against its previous `ids` to determine which Clawds were added or removed for transition animations.
 - `subagents` — total active subagent count across all sessions.
 - `overflow` (optional) — number of additional sessions beyond the 4 visible. Only present when > 0.
 
