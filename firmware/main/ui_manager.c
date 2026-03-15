@@ -241,9 +241,19 @@ void ui_manager_handle_event(const ble_evt_t *evt)
         }
         s_display_status = DISPLAY_STATUS_IDLE;
 
-        scene_set_sessions(s_scene,
-            evt->session_anims, evt->session_ids,
-            evt->session_anim_count, evt->subagent_count, evt->session_overflow);
+        if (evt->session_anim_count == 1 && evt->subagent_count == 0 && evt->session_overflow == 0) {
+            /* Single session — use the proven legacy path for correct positioning */
+            clawd_anim_id_t anim = (clawd_anim_id_t)evt->session_anims[0];
+            scene_set_fallback_anim(s_scene, anim);
+            if (!scene_is_playing_oneshot(s_scene)) {
+                scene_set_clawd_anim(s_scene, anim);
+            }
+        } else {
+            /* Multiple sessions or subagents — use multi-slot rendering */
+            scene_set_sessions(s_scene,
+                evt->session_anims, evt->session_ids,
+                evt->session_anim_count, evt->subagent_count, evt->session_overflow);
+        }
 
         s_last_activity_tick = lv_tick_get();
         break;

@@ -657,10 +657,16 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
         s->slots[i].display_id = 0;
     }
 
-    /* Assign new slots by matching display IDs */
+    /* Assign new slots by matching display IDs.
+     *
+     * Positioning: use lv_obj_align(BOTTOM_MID) for correct Y placement
+     * (feet in grass). For single session, x_off=0 centers the sprite.
+     * For multiple sessions, x_off distributes them across the container.
+     * x_centers[] are absolute pixel positions assuming 320px width;
+     * convert to offsets from center (160) for alignment. */
     for (int new_i = 0; new_i < count; new_i++) {
         int old_i = find_id_in(old_ids, old_count, ids[new_i]);
-        int cx = x_centers[count - 1][new_i];
+        int x_off = x_centers[count - 1][new_i] - 160;
         if (old_i >= 0 && old_slots[old_i].active) {
             /* Existing session — move slot data, update animation if changed */
             s->slots[new_i] = old_slots[old_i];
@@ -678,22 +684,22 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
                 decode_and_apply_frame(&s->slots[new_i]);
             }
 
-            /* Animate slide to new X position, set Y immediately */
+            /* Reposition */
             const anim_def_t *def = &anim_defs[s->slots[new_i].cur_anim];
-            int target_x = cx - def->width / 2;
-            int target_y = SCENE_HEIGHT - def->height + def->y_offset;
-            lv_obj_set_y(s->slots[new_i].sprite_img, target_y);
-            slide_slot_to(&s->slots[new_i], target_x, 600);
+            lv_obj_align(s->slots[new_i].sprite_img, LV_ALIGN_BOTTOM_MID,
+                         x_off, def->y_offset);
         } else {
-            /* New session — activate fresh, slide in from off-screen right */
+            /* New session — activate fresh.
+             * scene_activate_slot aligns at BOTTOM_MID, 0, y_offset.
+             * Then re-align with the correct x_off for this slot position. */
             scene_activate_slot(s, new_i, (clawd_anim_id_t)anims[new_i]);
             s->slots[new_i].display_id = ids[new_i];
-            const anim_def_t *def = &anim_defs[anims[new_i]];
-            int target_x = cx - def->width / 2;
-            int target_y = SCENE_HEIGHT - def->height + def->y_offset;
-            /* Start off-screen right */
-            lv_obj_set_pos(s->slots[new_i].sprite_img, 350, target_y);
-            slide_slot_to(&s->slots[new_i], target_x, 600);
+            if (count > 1) {
+                const anim_def_t *def = &anim_defs[anims[new_i]];
+                lv_obj_align(s->slots[new_i].sprite_img, LV_ALIGN_BOTTOM_MID,
+                             x_off, def->y_offset);
+            }
+            /* For count==1, scene_activate_slot already aligned at center */
         }
     }
 
