@@ -1,4 +1,5 @@
 .superpowers/
+.worktrees/
 
 # ESP-IDF
 bsp/esp-idf/
