@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
 from .ble_client import ClawdBleClient
-from .protocol import daemon_message_to_ble_payload
+from .protocol import daemon_message_to_ble_payload, display_state_to_ble_payload
 from .sim_client import SimClient, SIM_DEFAULT_PORT
 from .socket_server import SocketServer
 from .transport import TransportClient
@@ -130,7 +130,7 @@ class ClawdDaemon:
         self._session_states: dict[str, dict] = loaded_states
         self._session_order: list[tuple[str, int]] = loaded_order
         self._next_display_id: int = loaded_next_id
-        self._last_display_state: str = "sleeping"
+        self._last_display_state: dict = {"status": "sleeping"}
         self._session_staleness_timeout: float = 600.0
         self._evict_stale_sessions()
 
@@ -156,7 +156,7 @@ class ClawdDaemon:
                 if transport.is_connected:
                     await transport.write_notification(sweeping_payload)
             computed = self._compute_display_state()
-            fallback_payload = json.dumps({"action": "set_status", "status": computed})
+            fallback_payload = display_state_to_ble_payload(computed)
             for transport in self._transports.values():
                 if transport.is_connected:
                     await transport.write_notification(fallback_payload)
@@ -174,21 +174,42 @@ class ClawdDaemon:
         if changed:
             self._persist_sessions()
 
-    def _compute_display_state(self) -> str:
+    def _compute_display_state(self) -> dict:
         """Derive the display state from all active session states."""
         if not self._session_states:
-            return "sleeping"
-        working_count = sum(
-            1 for s in self._session_states.values()
-            if s["state"] == "working" or s.get("subagents")
-        )
-        if working_count > 0:
-            return f"working_{min(working_count, 3)}"
-        if any(s["state"] == "thinking" for s in self._session_states.values()):
-            return "thinking"
-        if any(s["state"] == "confused" for s in self._session_states.values()):
-            return "confused"
-        return "idle"
+            return {"status": "sleeping"}
+
+        anims = []
+        ids = []
+        total_subagents = 0
+
+        for session_id, display_id in self._session_order[:4]:
+            state = self._session_states.get(session_id)
+            if state is None:
+                continue
+            session_subagents = state.get("subagents", set())
+            total_subagents += len(session_subagents)
+
+            if state["state"] == "working" or session_subagents:
+                if session_subagents:
+                    anims.append("building")
+                else:
+                    anims.append("typing")
+            elif state["state"] == "thinking":
+                anims.append("thinking")
+            elif state["state"] == "confused":
+                anims.append("confused")
+            else:
+                anims.append("idle")
+            ids.append(display_id)
+
+        if not anims:
+            return {"status": "sleeping"}
+
+        result = {"anims": anims, "ids": ids, "subagents": total_subagents}
+        if len(self._session_order) > 4:
+            result["overflow"] = len(self._session_order) - 4
+        return result
 
     def _update_session_state(self, event: str, hook: str, session_id: str, agent_id: str = "") -> bool:
         """Update per-session state based on a received event.
@@ -278,12 +299,12 @@ class ClawdDaemon:
         )
 
     async def _broadcast_display_state_if_changed(self) -> None:
-        """Broadcast a set_status action to all connected transports if display state changed."""
+        """Broadcast display state to all connected transports if changed."""
         new_state = self._compute_display_state()
         if new_state == self._last_display_state:
             return
         self._last_display_state = new_state
-        payload = json.dumps({"action": "set_status", "status": new_state})
+        payload = display_state_to_ble_payload(new_state)
         for transport in self._transports.values():
             if transport.is_connected:
                 await transport.write_notification(payload)
@@ -341,7 +362,7 @@ class ClawdDaemon:
         # Send current display state
         state = self._compute_display_state()
         self._last_display_state = state
-        status_payload = json.dumps({"action": "set_status", "status": state})
+        status_payload = display_state_to_ble_payload(state)
         await transport.write_notification(status_payload)
 
     async def _transport_sender(self, name: str) -> None:

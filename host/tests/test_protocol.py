@@ -2,6 +2,8 @@ import json
 from clawd_tank_daemon.protocol import (
     hook_payload_to_daemon_message,
     daemon_message_to_ble_payload,
+    display_state_to_ble_payload,
+    display_state_to_v1_payload,
 )
 
 
@@ -304,3 +306,89 @@ def test_subagent_stop_produces_subagent_stop_event():
 def test_subagent_events_produce_no_ble_payload():
     assert daemon_message_to_ble_payload({"event": "subagent_start", "session_id": "s", "agent_id": "a"}) is None
     assert daemon_message_to_ble_payload({"event": "subagent_stop", "session_id": "s", "agent_id": "a"}) is None
+
+
+# --- Display state payload generation (v2 protocol) ---
+
+
+def test_display_state_to_payload_v2_sessions():
+    state = {"anims": ["typing", "thinking"], "ids": [1, 2], "subagents": 3}
+    payload = display_state_to_ble_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["action"] == "set_sessions"
+    assert parsed["anims"] == ["typing", "thinking"]
+    assert parsed["ids"] == [1, 2]
+    assert parsed["subagents"] == 3
+    assert "overflow" not in parsed
+
+
+def test_display_state_to_payload_v2_with_overflow():
+    state = {"anims": ["typing"] * 4, "ids": [1, 2, 3, 4], "subagents": 0, "overflow": 2}
+    payload = display_state_to_ble_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["overflow"] == 2
+
+
+def test_display_state_to_payload_sleeping():
+    state = {"status": "sleeping"}
+    payload = display_state_to_ble_payload(state)
+    parsed = json.loads(payload)
+    assert parsed == {"action": "set_status", "status": "sleeping"}
+
+
+def test_display_state_to_payload_v1_fallback():
+    """For v1 transports, convert dict state to legacy set_status string."""
+    state = {"anims": ["typing", "thinking"], "ids": [1, 2], "subagents": 3}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["action"] == "set_status"
+    assert parsed["status"] == "working_1"  # 1 typing session counts as working
+
+
+def test_display_state_to_v1_two_working():
+    state = {"anims": ["typing", "typing"], "ids": [1, 2], "subagents": 0}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "working_2"
+
+
+def test_display_state_to_v1_building_counts_as_working():
+    state = {"anims": ["building", "typing"], "ids": [1, 2], "subagents": 1}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "working_2"
+
+
+def test_display_state_to_v1_capped_at_3():
+    state = {"anims": ["typing", "typing", "building", "typing"], "ids": [1, 2, 3, 4], "subagents": 1}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "working_3"
+
+
+def test_display_state_to_v1_thinking():
+    state = {"anims": ["thinking"], "ids": [1], "subagents": 0}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "thinking"
+
+
+def test_display_state_to_v1_confused():
+    state = {"anims": ["confused"], "ids": [1], "subagents": 0}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "confused"
+
+
+def test_display_state_to_v1_idle():
+    state = {"anims": ["idle"], "ids": [1], "subagents": 0}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "idle"
+
+
+def test_display_state_to_v1_sleeping():
+    state = {"status": "sleeping"}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed == {"action": "set_status", "status": "sleeping"}

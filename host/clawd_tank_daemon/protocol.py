@@ -121,3 +121,27 @@ def daemon_message_to_ble_payload(msg: dict) -> Optional[str]:
         return json.dumps({"action": "clear"})
 
     raise ValueError(f"Unknown event: {event}")
+
+
+def display_state_to_ble_payload(state: dict) -> str:
+    """Convert display state dict to v2 JSON payload."""
+    if "status" in state:
+        return json.dumps({"action": "set_status", "status": state["status"]})
+    payload = {"action": "set_sessions", **state}
+    return json.dumps(payload)
+
+
+def display_state_to_v1_payload(state: dict) -> str:
+    """Convert display state dict to legacy v1 set_status payload."""
+    if "status" in state:
+        return json.dumps({"action": "set_status", "status": state["status"]})
+    working = sum(1 for a in state.get("anims", []) if a in ("typing", "building"))
+    if working > 0:
+        status = f"working_{min(working, 3)}"
+    elif "thinking" in state.get("anims", []):
+        status = "thinking"
+    elif "confused" in state.get("anims", []):
+        status = "confused"
+    else:
+        status = "idle"
+    return json.dumps({"action": "set_status", "status": status})
