@@ -18,12 +18,13 @@ The daemon tracks per-session subagent IDs, but the display has no visual distin
 
 Sprite sizes vary by animation (not a fixed size):
 
-| Animation | Native Size |
-|-----------|------------|
-| Idle, Alert, Building, Confused, Juggling, Sweeping, Thinking, Typing | 180×180px |
-| Happy, Sleeping | 160×160px |
+| Animation | Native Size | y_offset |
+|-----------|------------|----------|
+| Idle, Alert, Building, Confused, Juggling, Sweeping, Thinking, Typing | 180×180px | 8 |
+| Happy | 160×160px | 28 |
+| Sleeping | 160×160px | 8 |
 
-These sprites are larger than the 320×172 display — they're designed to extend beyond the visible area (clipped by LVGL container). The `y_offset=8` in the firmware pushes them 8px below the scene, and the top portion may extend above the scene.
+These sprites are larger than the 320×172 display — they're designed to extend beyond the visible area (clipped by LVGL container). The `y_offset` in the firmware pushes them below the scene bottom, and the top portion may extend above the scene.
 
 **All sprites render at native size — no scaling.** For multi-session layouts, the Clawds' X centers are spaced evenly across the 320px width. The character body occupies only a fraction of the sprite canvas (roughly 60-70px of body within 180px canvas), so overlap between adjacent sprites is mostly in the transparent areas and looks natural.
 
@@ -63,6 +64,7 @@ Each session's state maps to an animation:
 - **Style:** Blue (#0082FC) background badge with pixel-art "+N" text
 - **Visibility:** Only shown when active sessions > 4
 - **Value:** Number of sessions beyond the 4 visible (e.g., 6 sessions → "+2")
+- **Badge format depends on scene width:** In full screen, the badge shows "+N" (overflow beyond 4 visible). In narrow screen, the badge shows "×N" (total session count, since only 1 is visible). The firmware determines which format to use based on the current scene width — no extra data from the daemon needed.
 
 #### Clock
 
@@ -111,7 +113,7 @@ All sprites render at their native size (160-200px). No runtime scaling. Multipl
 A new read-only BLE GATT characteristic exposes the firmware's protocol version. The daemon reads it on connect and adapts its behavior accordingly.
 
 **Firmware side:**
-- New GATT characteristic UUID (alongside existing `notif_chr` and `config_chr`)
+- New GATT characteristic UUID: TBD (to be generated during implementation, added alongside existing `notif_chr` and `config_chr`)
 - Returns a simple integer as a UTF-8 string (e.g., `"2"`)
 - Current firmware (before this feature) has no version characteristic → daemon treats absence as version 1
 
@@ -121,8 +123,7 @@ A new read-only BLE GATT characteristic exposes the firmware's protocol version.
 - Use the version to decide which actions to send
 
 **Simulator TCP side:**
-- The simulator responds to a `{"action":"get_version"}` query with `{"version":2}`
-- Or the daemon can just assume the simulator is always up-to-date (built from same source)
+- The simulator is always built from the same source as the firmware, so the daemon assumes it supports the latest protocol version. No version query needed.
 
 **Version changelog:** See `docs/protocol-changelog.md` for the full version history.
 
@@ -138,10 +139,10 @@ A single new action replaces `set_status` for the multi-session case. The daemon
 }
 ```
 
-- `anims`: Ordered list of animation names, one per visible session. Ordered by priority (highest first). Max 4 entries — daemon truncates if more sessions exist.
+- `anims`: Ordered list of animation names, one per visible session. Ordered by priority (highest first). Max 4 entries — daemon truncates if more sessions exist. Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
 - `subagents`: Total active subagent count across all sessions.
 
-The firmware derives session count from `len(anims)`, overflow count from comparing against the daemon's separate session count (included as optional field when > 4):
+The firmware derives session count from `len(anims)`, overflow count from the optional `overflow` field:
 
 ```json
 {
@@ -159,8 +160,41 @@ The `overflow` field is only present when there are more sessions than the 4 vis
 - **v2+:** Daemon sends `set_sessions` with the full per-session data
 
 **Existing special cases preserved:**
-- `sweeping` (PreCompact) is still sent as a `set_status` oneshot before the regular state update
-- `sleeping`, `disconnected` remain as `set_status` since they're whole-device states, not per-session
+- `sweeping` (PreCompact) is still sent as a `set_status` oneshot before the regular state update — applies to all visible Clawds
+- `sleeping` and `disconnected` remain as `set_status` since they're whole-device states, not per-session
+- Receiving `set_sessions` implicitly clears sleeping/disconnected state (sessions exist = device is awake and connected)
+
+#### Firmware Event System Changes
+
+The existing `ble_evt_t` struct carries a single `uint8_t status` for `BLE_EVT_SET_STATUS`. A new event type is needed for the richer `set_sessions` data:
+
+```c
+#define MAX_VISIBLE_SESSIONS 4
+
+typedef struct {
+    uint8_t type;  /* BLE_EVT_SET_STATUS, BLE_EVT_SET_SESSIONS, etc. */
+    union {
+        /* Existing: BLE_EVT_SET_STATUS */
+        uint8_t status;
+
+        /* New: BLE_EVT_SET_SESSIONS */
+        struct {
+            uint8_t anim_count;
+            uint8_t anims[MAX_VISIBLE_SESSIONS]; /* clawd_anim_id_t values */
+            uint8_t subagent_count;
+            uint8_t overflow;
+        } sessions;
+
+        /* Existing notification fields... */
+        // ...
+    };
+    char id[49];
+    char project[65];
+    char message[129];
+} ble_evt_t;
+```
+
+The `parse_notification_json()` function in `ble_service.c` (and `sim_ble_parse.c`) parses the `set_sessions` action, maps animation name strings to `clawd_anim_id_t` enum values, and posts a `BLE_EVT_SET_SESSIONS` event to the queue. The UI manager handles this new event type by updating the scene's slot array.
 
 #### BLE MTU Analysis
 
@@ -180,7 +214,7 @@ Length: ~95 bytes. Well within the 256-byte BLE MTU limit.
 
 The scene needs a layout manager that:
 1. Accepts a list of session animations + subagent count + overflow count
-2. Computes Clawd positions and scale based on session count
+2. Computes Clawd X positions based on session count (evenly spaced centers)
 3. Renders 1-4 Clawd sprites with independent animations
 4. Renders the HUD counter overlay when subagents > 0
 5. Renders the overflow badge when overflow > 0
@@ -196,6 +230,7 @@ Currently the scene has a single `sprite_img` LVGL object, `frame_buf`, `cur_ani
 typedef struct {
     lv_obj_t *sprite_img;
     uint8_t  *frame_buf;
+    int       frame_buf_size;
     clawd_anim_id_t cur_anim;
     clawd_anim_id_t fallback_anim;
     int frame_idx;
@@ -207,6 +242,8 @@ The `scene_t` struct gains `clawd_slot_t slots[MAX_VISIBLE_SESSIONS]` and the ex
 
 Frame buffers are allocated from PSRAM on demand (when a slot becomes active) and freed when no longer needed, keeping the steady-state memory usage at 1 buffer for the common single-session case.
 
+Per-slot `fallback_anim` works the same as the current single-sprite system: when a oneshot (e.g., alert, happy) finishes, the slot returns to its fallback animation. The `sweeping` oneshot (sent via `set_status`) triggers on all active slots simultaneously — each slot plays the sweeping animation then returns to its own fallback.
+
 #### HUD Overlay
 
 A new LVGL layer on top of the scene for:
@@ -217,17 +254,18 @@ A new LVGL layer on top of the scene for:
 #### Transition Animations
 
 When a **new session starts** (Clawd enters):
-1. New Clawd appears off-screen to the right (x > 320) playing a **walking animation**
-2. All existing Clawds switch to the walking animation and slide toward their new X positions (LVGL `lv_anim_t`, ease-out, ~600ms)
+1. New Clawd appears off-screen to the right (x > 320) playing a **crab-walking animation**
+2. All existing Clawds switch to the crab-walking animation and slide toward their new X positions (LVGL `lv_anim_t`, ease-out, ~600ms)
 3. The new Clawd walks in from the right to its target X position over the same duration
 4. Once all Clawds reach their positions, each switches to its session-state animation (typing, thinking, etc.)
+5. **Walking direction:** Each Clawd faces the direction it's moving. Moving left = native left-facing sprite. Moving right = horizontally flipped sprite.
 
 When a **session ends** (Clawd exits):
 1. The departing Clawd fades out over 400ms (opacity → 0)
-2. Remaining Clawds switch to walking animation and slide to their new X positions (~600ms, ease-out)
+2. Remaining Clawds switch to crab-walking animation and slide to their new X positions (~600ms, ease-out)
 3. Once in position, each resumes its session-state animation
 
-**Walking animation:** A new sprite showing Clawd walking sideways (legs shuffling, body bobbing). Needs to be created as a new sprite asset. If not yet available, fall back to sliding the current animation without switching to a walk cycle.
+**Walking animation:** A new sprite showing Clawd crab-walking sideways. If not yet available, fall back to sliding the current animation without switching to a walk cycle.
 
 **HUD counter changes:** Instant show/hide — no animation needed for HUD elements.
 
@@ -238,6 +276,8 @@ When a **session ends** (Clawd exits):
 `_compute_display_state()` returns a dict instead of a string:
 
 ```python
+MAX_VISIBLE = 4
+
 def _compute_display_state(self) -> dict:
     if not self._session_states:
         return {"status": "sleeping"}
@@ -247,16 +287,16 @@ def _compute_display_state(self) -> dict:
     for sid, s in self._session_states.items():
         has_subs = bool(s.get("subagents"))
         if s["state"] == "working":
-            session_anims.append(("building" if has_subs else "typing", 4))
+            session_anims.append(("building" if has_subs else "typing", 4, s["last_event"]))
         elif s["state"] == "thinking":
-            session_anims.append(("thinking", 3))
+            session_anims.append(("thinking", 3, s["last_event"]))
         elif s["state"] == "confused":
-            session_anims.append(("confused", 2))
+            session_anims.append(("confused", 2, s["last_event"]))
         else:
-            session_anims.append(("idle", 1))
+            session_anims.append(("idle", 1, s["last_event"]))
 
-    # Sort by priority (highest first), take top 4
-    session_anims.sort(key=lambda x: -x[1])
+    # Sort by priority (highest first), then by most recent event (tiebreaker)
+    session_anims.sort(key=lambda x: (-x[1], -x[2]))
     anims = [a[0] for a in session_anims[:MAX_VISIBLE]]
 
     total_subagents = sum(
@@ -273,13 +313,13 @@ def _compute_display_state(self) -> dict:
     return result
 ```
 
-Change detection in `_broadcast_display_state_if_changed()`: compare the new dict against `self._last_display_state` using `==`. The `anims` list is always sorted by priority (highest first), so ordering is stable for the same set of sessions. `_last_display_state` changes from `str` to `dict`.
+Change detection in `_broadcast_display_state_if_changed()`: compare the new dict against `self._last_display_state` using `==`. The `anims` list is sorted by priority then recency, so ordering is deterministic. `_last_display_state` changes from `str` to `dict`.
 
 ### Scene Width Transitions
 
 When transitioning between full screen (320px) and narrow (107px, notifications present):
 - **Full → Narrow:** Remove extra Clawds (fade out), keep highest-priority one, add session badge if sessions > 1
-- **Narrow → Full:** Spawn additional Clawds at their positions (fade in), remove session badge
+- **Narrow → Full:** Spawn additional Clawds at their positions (walk in from right), remove session badge
 
 ### Edge Cases
 
@@ -289,6 +329,7 @@ When transitioning between full screen (320px) and narrow (107px, notifications 
 - **0 sessions (sleeping):** No Clawds, no HUD, sleeping animation as today
 - **Disconnected:** Single disconnected Clawd as today, no HUD
 - **Old firmware:** Daemon falls back to `set_status` with single animation string
+- **`set_sessions` received while sleeping/disconnected:** Implicitly wakes the device (sessions exist = active)
 
 ### New Sprites & Assets
 
@@ -302,7 +343,7 @@ When transitioning between full screen (320px) and narrow (107px, notifications 
    - Same salmon-orange (#DE886D) as Clawd, 4 small legs, tiny arms, small black eyes
    - Must go through sprite pipeline: `svg2frames.py` → `png2rgb565.py` → RLE header
 
-2. **Pixel-art bitmap font** — digits 0-9, × symbol, + symbol
+3. **Pixel-art bitmap font** — digits 0-9, × symbol, + symbol
    - 5×5 pixel grid per character
    - Rendered as filled rectangles at configurable pixel size
    - Yellow (#FFC107) for subagent counter, blue (#8BC6FC) for session badges

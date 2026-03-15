@@ -4,7 +4,7 @@ Protocol version is exposed by the firmware via a read-only BLE GATT characteris
 
 ## Version 2 (planned)
 
-**New GATT characteristic:** Protocol version (read-only, returns `"2"`)
+**New GATT characteristic:** Protocol version (read-only, returns `"2"`). UUID: TBD (generated during implementation).
 
 **New action: `set_sessions`**
 ```json
@@ -15,11 +15,13 @@ Protocol version is exposed by the firmware via a read-only BLE GATT characteris
   "overflow": 2
 }
 ```
-- `anims` — ordered list of per-session animation names (max 4). Supported values: `idle`, `typing`, `thinking`, `building`, `confused`, `juggling`, `sweeping`.
+- `anims` — ordered list of per-session animation names (max 4, highest priority first). Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
 - `subagents` — total active subagent count across all sessions.
 - `overflow` (optional) — number of additional sessions beyond the 4 visible. Only present when > 0.
 
-Enables multi-session display (multiple Clawds) and subagent HUD counter.
+Enables multi-session display (multiple Clawds) and subagent HUD counter. Receiving `set_sessions` implicitly clears sleeping/disconnected state.
+
+Note: `sweeping` is NOT a valid `anims` value — it's still sent as a `set_status` oneshot (applies to all visible Clawds). `juggling` is retired as a v1 intensity tier — replaced by showing individual Clawds per session.
 
 **Existing actions unchanged:** `add`, `dismiss`, `clear`, `set_time`, `set_status` all continue to work as in v1.
 
