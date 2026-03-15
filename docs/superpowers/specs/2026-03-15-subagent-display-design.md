@@ -16,13 +16,27 @@ The daemon tracks per-session subagent IDs, but the display has no visual distin
 
 #### Session Display
 
-| Active Sessions | Layout | Rendered Size |
-|----------------|--------|---------------|
-| 1 | 1 Clawd, centered | 64×64px |
-| 2 | 2 Clawds, side by side | 64×64px each |
-| 3 | 3 Clawds, spread evenly | 52×52px each |
-| 4 | 4 Clawds, spread evenly | 45×45px each |
-| 5+ | 4 Clawds visible + blue "+N" badge top-right | 45×45px each |
+Sprite sizes vary by animation (not a fixed size):
+
+| Animation | Native Size |
+|-----------|------------|
+| Idle, Alert, Building, Confused, Juggling, Sweeping, Thinking, Typing | 180×180px |
+| Happy, Sleeping | 160×160px |
+| Disconnected | 200×160px |
+
+These sprites are larger than the 320×172 display — they're designed to extend beyond the visible area (clipped by LVGL container). The `y_offset=8` in the firmware pushes them 8px below the scene, and the top portion extends above the scene when the sprite is taller than the scene height.
+
+For multi-session layouts, sprites are scaled down from their native size using `lv_image_set_scale()`:
+
+| Active Sessions | Layout | Scale Factor | Approx. Visible Width |
+|----------------|--------|-------------|----------------------|
+| 1 | 1 Clawd, centered | 1.0 (native) | ~180px |
+| 2 | 2 Clawds, side by side | ~0.75 | ~135px each |
+| 3 | 3 Clawds, spread evenly | ~0.55 | ~100px each |
+| 4 | 4 Clawds, spread evenly | ~0.42 | ~75px each |
+| 5+ | 4 Clawds visible + blue "+N" badge top-right | ~0.42 | ~75px each |
+
+Scale factors are approximate — exact values should be tuned using `tools/scene-layout-editor.html` to ensure sprites fit without overlapping. The visible width varies by animation since the character doesn't fill the entire sprite canvas.
 
 Each Clawd displays the animation matching its session state independently.
 
@@ -61,7 +75,7 @@ When notifications are active, the scene width shrinks to 107px. Only 1 Clawd fi
 
 | Element | Behavior |
 |---------|----------|
-| Clawd | 1 Clawd at 64×64px. Displays the highest-priority session animation. |
+| Clawd | 1 Clawd at native size (no scaling). Displays the highest-priority session animation. |
 | Subagent HUD | Mini-crab icon + yellow "×N" in top-left corner (same as full screen) |
 | Session badge | Blue "×N" badge in top-right of scene area, showing **total** session count. Only shown when sessions > 1. |
 
@@ -69,25 +83,28 @@ Priority order for which session's animation to display: working > thinking > co
 
 ### Scaling Strategy
 
-The current sprite assets are 64×64px RLE-compressed RGB565 frames. For sessions 3+ where Clawds render smaller than 64px:
+The current sprite assets are 160-200px wide, RLE-compressed RGB565, decoded at runtime into ARGB8888 frame buffers. For single-session mode, sprites render at native size (no scaling). For multi-session layouts (2+), sprites need to be scaled down.
 
 **Approach: LVGL software scaling via `lv_image_set_scale()`.**
 
-LVGL 9 supports runtime image scaling. The firmware decodes each frame to its existing 64×64 ARGB8888 buffer, then LVGL scales it down during rendering. This avoids creating separate sprite assets at each target size.
+LVGL 9 supports runtime image scaling. The firmware decodes each frame to its native-size ARGB8888 buffer, then LVGL scales it down during rendering. This avoids creating separate sprite assets at each target size. `lv_image_set_scale()` takes a factor where 256 = 1.0x.
 
 Performance considerations:
 - Software bilinear scaling on ESP32-C6 RISC-V at 8fps
-- For 3 sessions: 3 sprites × 52×52 target (downscaled from 64×64) at 8fps
-- For 4 sessions: 4 sprites × 45×45 target at 8fps
-- If scaling proves too slow, fall back to nearest-neighbor scaling (`LV_IMAGE_ALIGN_STRETCH` with disabled anti-aliasing) which is faster but blockier — acceptable at these small sizes
+- For 2 sessions: 2 sprites × ~135px target (downscaled from 180px) at 8fps
+- For 4 sessions: 4 sprites × ~75px target (downscaled from 180px) at 8fps
+- If scaling proves too slow, fall back to nearest-neighbor scaling which is faster but blockier — acceptable at these small sizes on a 320px display
+- Single-session case (most common) has zero scaling overhead
 
 ### Resource Budget
 
 **Frame buffers (PSRAM):**
-- Current: 1 × 64×64×4 = 16,384 bytes
-- Max (4 sessions): 4 × 64×64×4 = 65,536 bytes (64KB)
+- Current: 1 × 180×180×4 = 129,600 bytes (~127KB)
+- Max (4 sessions): 4 × 180×180×4 = 518,400 bytes (~506KB)
 - Mini-crab HUD icon: 1 × 16×16×4 = 1,024 bytes
-- Total max: ~66KB PSRAM — well within the 4MB PSRAM budget
+- Total max: ~507KB PSRAM — within the 4MB PSRAM budget but significant
+- Optimization: allocate frame buffers lazily (only when a slot is activated), free when deactivated. Steady-state for 1 session = ~127KB (same as today).
+- Note: `ensure_frame_buf()` already handles dynamic reallocation; the buffer grows to fit the largest animation's frame size.
 
 **LVGL objects:**
 - Current: 1 sprite image + background objects
@@ -95,8 +112,7 @@ Performance considerations:
 - Additional ~10 LVGL objects — negligible
 
 **RLE sprite data (flash):**
-- Current: ~11 animations × ~20 frames × ~800 bytes = ~176KB
-- No change — same sprites, just scaled at runtime
+- Current: ~11 animations × variable frames — already in flash, no change
 - Mini-crab sprite: ~8 frames × ~200 bytes = ~1.6KB additional
 
 ### Protocol Changes
