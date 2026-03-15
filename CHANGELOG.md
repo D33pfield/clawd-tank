@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.1] - 2026-03-14
+
+### Added
+
+- **Subagent tracking** — `SubagentStart`/`SubagentStop` hooks track active Claude Code subagents per session. Sessions with active subagents are never evicted and count as "working", preventing Clawd from sleeping during long-running agent tasks.
+- **Session state persistence** — Session state saved atomically to `~/.clawd-tank/sessions.json` on structural changes (state transitions, subagent add/remove). Daemon loads saved state on startup with immediate stale eviction, so restarting the app preserves the correct animation.
+- **Simulator logging** — Simulator stdout/stderr routed through Python logger to unified `clawd-tank.log` with `[clawd-tank.sim-process]` tag.
+- **Build script** — `host/build.sh` automates static simulator build, py2app, binary bundling, and optional install (`--install`).
+- **Version logging** — App version logged on startup for easier debugging.
+
+### Changed
+
+- **Version numbering on master** — Commit count now measured against `origin/master` (unpushed commits) instead of local `master` (always 0).
+- **CI workflow** — `build-macos-app.yml` now builds the static simulator and bundles it into the `.app`, matching `release.yml`.
+
+### Fixed
+
+- **Quit handler race condition** — Sim transport is now removed from daemon before killing the process, avoiding double-disconnect. Sim process is SIGKILL'd immediately instead of waiting 3s for SIGTERM.
+- **Session file double-close** — Fixed fd double-close in `save_sessions` error path that could leave orphaned temp files.
+- **Test pollution** — Added `conftest.py` with autouse fixture to redirect session persistence to temp dirs, preventing tests from writing to real `~/.clawd-tank/sessions.json`.
+
 ## [1.1.0] - 2026-03-14
 
 ### Added
