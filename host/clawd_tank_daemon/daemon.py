@@ -324,6 +324,7 @@ class ClawdDaemon:
 
         # Send current display state
         state = self._compute_display_state()
+        self._last_display_state = state
         status_payload = json.dumps({"action": "set_status", "status": state})
         await transport.write_notification(status_payload)
 
