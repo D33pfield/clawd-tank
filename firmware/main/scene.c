@@ -540,6 +540,14 @@ static const int x_centers[][4] = {
     {64, 128, 192, 256} /* 4 sessions */
 };
 
+static int find_id_in(const uint16_t *ids, int count, uint16_t target)
+{
+    for (int i = 0; i < count; i++) {
+        if (ids[i] == target) return i;
+    }
+    return -1;
+}
+
 void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
                         int count, uint8_t subagent_count, uint8_t overflow)
 {
@@ -547,18 +555,76 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
     if (count < 1) count = 1;
     if (count > MAX_SLOTS) count = MAX_SLOTS;
 
+    /* Save old state to temp — must copy BEFORE reassigning to avoid
+     * data corruption when indices overlap (the whole point of diffing). */
+    clawd_slot_t old_slots[MAX_SLOTS];
+    uint16_t old_ids[MAX_SLOTS];
+    int old_count = s->active_slot_count;
     for (int i = 0; i < MAX_SLOTS; i++) {
-        if (i < count) {
-            scene_activate_slot(s, i, (clawd_anim_id_t)anims[i]);
-            s->slots[i].display_id = ids[i];
-            int cx = x_centers[count - 1][i];
-            const anim_def_t *def = &anim_defs[anims[i]];
-            lv_obj_set_pos(s->slots[i].sprite_img, cx - def->width / 2,
+        old_slots[i] = s->slots[i];
+        old_ids[i] = s->slots[i].display_id;
+    }
+
+    /* Reset live slots — we'll reassign from old_slots or create fresh */
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        s->slots[i].active = false;
+        s->slots[i].sprite_img = NULL;
+        s->slots[i].frame_buf = NULL;
+        s->slots[i].frame_buf_size = 0;
+        s->slots[i].display_id = 0;
+    }
+
+    /* Assign new slots by matching display IDs */
+    for (int new_i = 0; new_i < count; new_i++) {
+        int old_i = find_id_in(old_ids, old_count, ids[new_i]);
+        if (old_i >= 0 && old_slots[old_i].active) {
+            /* Existing session — move slot data, update animation if changed */
+            s->slots[new_i] = old_slots[old_i];
+            old_slots[old_i].sprite_img = NULL; /* transferred ownership */
+            old_slots[old_i].frame_buf = NULL;
+            s->slots[new_i].display_id = ids[new_i];
+
+            /* Update animation if it changed */
+            clawd_anim_id_t new_anim = (clawd_anim_id_t)anims[new_i];
+            if (s->slots[new_i].cur_anim != new_anim) {
+                s->slots[new_i].cur_anim = new_anim;
+                s->slots[new_i].fallback_anim = new_anim;
+                s->slots[new_i].frame_idx = 0;
+                s->slots[new_i].last_frame_tick = lv_tick_get();
+                decode_and_apply_frame(&s->slots[new_i]);
+            }
+
+            /* Reposition for new layout */
+            int cx = x_centers[count - 1][new_i];
+            const anim_def_t *def = &anim_defs[s->slots[new_i].cur_anim];
+            lv_obj_set_pos(s->slots[new_i].sprite_img, cx - def->width / 2,
                            SCENE_HEIGHT - def->height + def->y_offset);
         } else {
-            scene_deactivate_slot(s, i);
+            /* New session — activate fresh */
+            scene_activate_slot(s, new_i, (clawd_anim_id_t)anims[new_i]);
+            s->slots[new_i].display_id = ids[new_i];
+            int cx = x_centers[count - 1][new_i];
+            const anim_def_t *def = &anim_defs[anims[new_i]];
+            lv_obj_set_pos(s->slots[new_i].sprite_img, cx - def->width / 2,
+                           SCENE_HEIGHT - def->height + def->y_offset);
         }
     }
+
+    /* Clean up removed slots — free resources that weren't transferred */
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        if (old_slots[i].sprite_img) {
+            /* This slot wasn't transferred — hide and delete its LVGL object */
+            lv_obj_add_flag(old_slots[i].sprite_img, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_delete(old_slots[i].sprite_img);
+        }
+        free(old_slots[i].frame_buf);
+    }
+
+    /* Deactivate remaining slots beyond count */
+    for (int i = count; i < MAX_SLOTS; i++) {
+        s->slots[i].active = false;
+    }
+
     s->active_slot_count = count;
 }
 
