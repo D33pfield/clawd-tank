@@ -295,7 +295,7 @@ When transitioning between full screen (320px) and narrow (107px, notifications 
 1. **Clawd crab-walking sprite** (same size as other Clawd animations, ~180×180)
    - Clawd shuffling sideways like a real crab — legs doing a lateral scuttle, body rocking side-to-side, eyes/face turned toward the direction of movement
    - Only left-facing variant needed; right-facing is achieved at runtime via LVGL horizontal flip
-   - Used for session entrance (walking in from right, flipped) and repositioning transitions
+   - Entrance from the right uses the native left-facing sprite (walking toward the scene). Repositioning may need either direction depending on which way the Clawd needs to move.
 
 2. **Mini-crab sprite** (~16×16 at original scale)
    - `mini-crab-typing` — bouncing body, waving arms (for HUD icon)
