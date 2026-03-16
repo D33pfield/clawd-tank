@@ -15,11 +15,16 @@ void ui_manager_handle_event(const ble_evt_t *evt);
 void ui_manager_tick(void);
 
 #ifdef SIMULATOR
+#include "scene.h"
+
 // Get current animation info (frame count and ms per frame).
 void ui_manager_get_anim_info(int *frame_count, int *frame_ms);
 
 // Get current animation frame index.
 int ui_manager_get_frame_idx(void);
+
+// Get the scene pointer (for query_state inspection from main thread).
+scene_t *ui_manager_get_scene(void);
 #endif
 
 #endif // UI_MANAGER_H

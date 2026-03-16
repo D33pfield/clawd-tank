@@ -289,6 +289,11 @@ int ui_manager_get_frame_idx(void)
 {
     return scene_get_frame_idx(s_scene);
 }
+
+scene_t *ui_manager_get_scene(void)
+{
+    return s_scene;
+}
 #endif
 
 /* ---------- Tick ---------- */
