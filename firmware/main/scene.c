@@ -873,7 +873,8 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
 
         clawd_anim_id_t new_anim = (clawd_anim_id_t)anims[0];
         int old_x_off = slot->x_off;
-        slot->x_off = 0;
+        /* Don't set x_off = 0 yet — may be deferred if departing slots exist.
+         * It will be set when the walk starts (either immediately or deferred). */
         slot->fallback_anim = new_anim;
 
         /* Deactivate extra slots — play going-away exit animation */
@@ -915,11 +916,13 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
 
         if (slot->walking_in) {
             /* Already walking — just update fallback and target */
+            slot->x_off = 0;
         } else if (has_departing && old_x_off != 0) {
             /* Departing slots exist — defer walk until burrowing finishes.
-             * x_off is already set to 0 (target), sprite stays at old_x_off. */
+             * Keep x_off at old value so the deferred handler detects the diff. */
         } else if (old_x_off != 0 && !s->narrow) {
             /* Position changed, no departing — walk immediately */
+            slot->x_off = 0;
             slot->cur_anim = CLAWD_ANIM_WALKING;
             slot->frame_idx = 0;
             slot->last_frame_tick = lv_tick_get();
@@ -939,6 +942,7 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             lv_anim_start(&a);
         } else {
             /* Same position or narrow — update animation in place */
+            slot->x_off = 0;
             const anim_def_t *cur_def = &anim_defs[slot->cur_anim];
             bool playing_oneshot = !cur_def->looping &&
                                    slot->frame_idx < cur_def->frame_count - 1;
@@ -1019,11 +1023,10 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
                 s->slots[new_i].fallback_anim = new_anim;
             } else if (will_have_departing) {
                 /* Departing slots exist — defer repositioning walk until
-                 * the going-away animation finishes. Keep sprite at its
-                 * current position, store target x_off for later. */
-                s->slots[new_i].x_off = x_off;  /* target position */
+                 * the going-away animation finishes. Keep x_off at old value
+                 * so the deferred handler in scene_tick detects the diff. */
+                /* x_off NOT updated — stays at old_slots[old_i].x_off */
                 s->slots[new_i].fallback_anim = new_anim;
-                /* Don't move the sprite — it stays at old_x_off visually */
             } else {
                 int old_x_off = old_slots[old_i].x_off;
                 s->slots[new_i].x_off = x_off;
