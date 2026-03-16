@@ -249,6 +249,7 @@ struct scene_t {
     clawd_slot_t slots[MAX_SLOTS];
     int active_slot_count;
     bool narrow;  /* true when scene is in notification-width mode (107px) */
+    bool pending_reposition;  /* true = wait for departing slots to finish before walking */
 
     /* Time label */
     lv_obj_t *time_label;
@@ -701,6 +702,43 @@ void scene_tick(scene_t *scene)
                         slot->frame_buf_size = 0;
                         slot->active = false;
                         slot->departing = false;
+                        /* Check if this was the last departing slot —
+                         * if so, trigger deferred repositioning walks */
+                        if (scene->pending_reposition) {
+                            bool any_departing = false;
+                            for (int d = 0; d < MAX_SLOTS; d++) {
+                                if (scene->slots[d].departing) { any_departing = true; break; }
+                            }
+                            if (!any_departing) {
+                                scene->pending_reposition = false;
+                                int cnt = scene->active_slot_count;
+                                for (int r = 0; r < cnt; r++) {
+                                    clawd_slot_t *rs = &scene->slots[r];
+                                    if (!rs->active || !rs->sprite_img || rs->walking_in) continue;
+                                    int target = (cnt >= 2) ? x_centers[cnt - 1][r] - 160 : 0;
+                                    int cur = rs->x_off;
+                                    if (cur == target) continue;
+                                    rs->x_off = target;
+                                    rs->fallback_anim = rs->cur_anim;
+                                    rs->cur_anim = CLAWD_ANIM_WALKING;
+                                    rs->frame_idx = 0;
+                                    rs->last_frame_tick = lv_tick_get();
+                                    decode_and_apply_frame(rs);
+                                    const anim_def_t *wd = &anim_defs[CLAWD_ANIM_WALKING];
+                                    lv_obj_set_size(rs->sprite_img, wd->width, wd->height);
+                                    rs->walking_in = true;
+                                    lv_anim_t wa;
+                                    lv_anim_init(&wa);
+                                    lv_anim_set_var(&wa, rs->sprite_img);
+                                    lv_anim_set_values(&wa, cur, target);
+                                    lv_anim_set_duration(&wa, 600);
+                                    lv_anim_set_path_cb(&wa, lv_anim_path_ease_out);
+                                    lv_anim_set_exec_cb(&wa, (lv_anim_exec_xcb_t)lv_obj_set_x);
+                                    lv_anim_set_completed_cb(&wa, walk_in_complete_cb);
+                                    lv_anim_start(&wa);
+                                }
+                            }
+                        }
                         continue;
                     }
                     /* Oneshot finished — auto-return to fallback.
@@ -853,10 +891,20 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             }
         }
 
+        /* Check if any departing slots were created above */
+        bool has_departing = false;
+        for (int i = 1; i < MAX_SLOTS; i++) {
+            if (s->slots[i].departing) { has_departing = true; break; }
+        }
+        s->pending_reposition = has_departing;
+
         if (slot->walking_in) {
             /* Already walking — just update fallback and target */
+        } else if (has_departing && old_x_off != 0) {
+            /* Departing slots exist — defer walk until burrowing finishes.
+             * x_off is already set to 0 (target), sprite stays at old_x_off. */
         } else if (old_x_off != 0 && !s->narrow) {
-            /* Position changed (returning from multi-session to center) — walk */
+            /* Position changed, no departing — walk immediately */
             slot->cur_anim = CLAWD_ANIM_WALKING;
             slot->frame_idx = 0;
             slot->last_frame_tick = lv_tick_get();
@@ -919,6 +967,18 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
         s->slots[i].display_id = 0;
     }
 
+    /* Pre-scan: will any old sessions depart (not matched by new IDs)?
+     * If so, we defer repositioning walks until the going-away animation finishes. */
+    bool will_have_departing = false;
+    if (!s->narrow) {
+        for (int i = 0; i < old_count; i++) {
+            if (old_slots[i].active && find_id_in(ids, count, old_ids[i]) < 0) {
+                will_have_departing = true;
+                break;
+            }
+        }
+    }
+
     /* Assign new slots by matching display IDs.
      *
      * Positioning: use lv_obj_align(BOTTOM_MID) for correct Y placement
@@ -934,22 +994,28 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             old_slots[old_i].sprite_img = NULL; /* transferred ownership */
             old_slots[old_i].frame_buf = NULL;
             s->slots[new_i].display_id = ids[new_i];
-            s->slots[new_i].x_off = x_off;
 
             clawd_anim_id_t new_anim = (clawd_anim_id_t)anims[new_i];
 
             if (s->slots[new_i].walking_in) {
                 /* Walk-in animation still running — don't interrupt it.
                  * Just update fallback and target position. */
+                s->slots[new_i].x_off = x_off;
                 s->slots[new_i].fallback_anim = new_anim;
+            } else if (will_have_departing) {
+                /* Departing slots exist — defer repositioning walk until
+                 * the going-away animation finishes. Keep sprite at its
+                 * current position, store target x_off for later. */
+                s->slots[new_i].x_off = x_off;  /* target position */
+                s->slots[new_i].fallback_anim = new_anim;
+                /* Don't move the sprite — it stays at old_x_off visually */
             } else {
                 int old_x_off = old_slots[old_i].x_off;
+                s->slots[new_i].x_off = x_off;
                 s->slots[new_i].fallback_anim = new_anim;
 
                 if (old_x_off != x_off) {
-                    /* Position changed — walk to new position.
-                     * Switch to walking animation, slide from old to new x_off,
-                     * gate the target animation in fallback_anim. */
+                    /* Position changed — walk to new position immediately */
                     s->slots[new_i].cur_anim = CLAWD_ANIM_WALKING;
                     s->slots[new_i].frame_idx = 0;
                     s->slots[new_i].last_frame_tick = lv_tick_get();
@@ -1049,6 +1115,9 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             free(old_slots[i].frame_buf);
         }
     }
+
+    /* Set pending_reposition if departing slots were created */
+    s->pending_reposition = (departing_idx > count);
 
     /* In narrow mode, hide all slots except 0 and re-center slot 0 */
     if (s->narrow) {
