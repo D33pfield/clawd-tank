@@ -522,18 +522,18 @@ scene_t *scene_create(lv_obj_t *parent)
     lv_label_set_text(s->noconn_label, "No connection");
     lv_obj_add_flag(s->noconn_label, LV_OBJ_FLAG_HIDDEN);
 
-    /* HUD: subagent counter canvas (top-left) */
+    /* HUD: subagent counter canvas (top-left) — sized for 2x mini-crab (20x14) + text */
     s->hud_canvas = lv_canvas_create(s->container);
-    static uint8_t hud_buf[80 * 15 * 4];
-    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 80, 15, LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 4, 4);
+    static uint8_t hud_buf[80 * 16 * 4];
+    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 80, 16, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 4, 2);
     lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
 
     /* HUD: overflow/total badge canvas (top-right of SCREEN, not container) */
     s->hud_badge_canvas = lv_canvas_create(lv_screen_active());
     static uint8_t badge_buf[48 * 12 * 4];
     lv_canvas_set_buffer(s->hud_badge_canvas, badge_buf, 48, 12, LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_align(s->hud_badge_canvas, LV_ALIGN_TOP_RIGHT, -4, 4);
+    lv_obj_align(s->hud_badge_canvas, LV_ALIGN_TOP_RIGHT, -1, 4);
     lv_obj_add_flag(s->hud_badge_canvas, LV_OBJ_FLAG_HIDDEN);
 
     s->hud_subagent_count = 0;
@@ -555,7 +555,7 @@ static const int x_centers[][4] = {
 
 /* Forward declarations — defined after scene_set_width */
 static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflow, int total_sessions);
-static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy);
+static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy, int scale);
 
 /* ---------- Width animation ---------- */
 
@@ -857,10 +857,10 @@ void scene_tick(scene_t *scene)
             scene->mini_crab_frame = (scene->mini_crab_frame + 1) % anim_defs[CLAWD_ANIM_MINI_CLAWD].frame_count;
             /* Redraw the subagent canvas with the new frame */
             lv_canvas_fill_bg(scene->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
-            hud_blit_mini_crab(scene->hud_canvas, scene->mini_crab_frame, 0, 0);
+            hud_blit_mini_crab(scene->hud_canvas, scene->mini_crab_frame, 0, 1, 2);
             char buf[8];
             snprintf(buf, sizeof(buf), "x%d", scene->hud_subagent_count);
-            pixel_font_draw(scene->hud_canvas, buf, anim_defs[CLAWD_ANIM_MINI_CLAWD].width + 2, 1, 2, lv_color_hex(0xFFC107));
+            pixel_font_draw(scene->hud_canvas, buf, MINI_CRAB_WIDTH * 2 + 2, 3, 2, lv_color_hex(0xFFC107));
         }
     }
 }
@@ -889,11 +889,12 @@ static int find_id_in(const uint16_t *ids, int count, uint16_t target)
 
 /* ---------- HUD overlay ---------- */
 
-/* Blit a mini-crab RLE frame onto an ARGB8888 canvas at (dx, dy) */
-static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy)
+/* Blit a mini-crab RLE frame onto an ARGB8888 canvas at (dx, dy) with integer scale */
+static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy, int scale)
 {
     const anim_def_t *def = &anim_defs[CLAWD_ANIM_MINI_CLAWD];
     if (frame_idx < 0 || frame_idx >= def->frame_count) return;
+    if (scale < 1) scale = 1;
     const uint16_t *rle = &def->rle_data[def->frame_offsets[frame_idx]];
     uint8_t decoded[def->width * def->height * 4];
     rle_decode_argb8888(rle, decoded, def->width * def->height, TRANSPARENT_KEY);
@@ -901,9 +902,13 @@ static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy)
         for (int x = 0; x < def->width; x++) {
             int src = (y * def->width + x) * 4;
             if (decoded[src + 3] == 0) continue;  /* skip transparent */
-            lv_canvas_set_px(canvas, dx + x, dy + y,
-                             lv_color_make(decoded[src + 2], decoded[src + 1], decoded[src]),
-                             decoded[src + 3]);
+            lv_color_t c = lv_color_make(decoded[src + 2], decoded[src + 1], decoded[src]);
+            for (int sy = 0; sy < scale; sy++) {
+                for (int sx = 0; sx < scale; sx++) {
+                    lv_canvas_set_px(canvas, dx + x * scale + sx,
+                                     dy + y * scale + sy, c, decoded[src + 3]);
+                }
+            }
         }
     }
 }
@@ -915,10 +920,10 @@ static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflo
     /* --- Subagent counter (left canvas): mini-crab icon + "×N" --- */
     if (subagent_count > 0) {
         lv_canvas_fill_bg(s->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
-        hud_blit_mini_crab(s->hud_canvas, s->mini_crab_frame, 0, 0);
+        hud_blit_mini_crab(s->hud_canvas, s->mini_crab_frame, 0, 1, 2);
         char buf[8];
         snprintf(buf, sizeof(buf), "x%d", subagent_count);
-        pixel_font_draw(s->hud_canvas, buf, anim_defs[CLAWD_ANIM_MINI_CLAWD].width + 2, 1, 2, lv_color_hex(0xFFC107));
+        pixel_font_draw(s->hud_canvas, buf, MINI_CRAB_WIDTH * 2 + 2, 3, 2, lv_color_hex(0xFFC107));
         lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_canvas_fill_bg(s->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);

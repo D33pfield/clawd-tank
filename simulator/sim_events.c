@@ -180,7 +180,7 @@ void sim_events_init_inline(const char *events_str)
             evt.session_overflow = 0;
             char suffix[64] = "";
 
-            while (evt.session_anim_count < MAX_VISIBLE_SESSIONS) {
+            while (1) {
                 p = skip_ws(p);
                 if (!*p || *p == ';') break;
 
@@ -198,7 +198,8 @@ void sim_events_init_inline(const char *events_str)
                     continue;
                 }
 
-                /* Parse anim_name id pair */
+                /* Parse anim_name id pair (stop accepting pairs at max) */
+                if (evt.session_anim_count >= MAX_VISIBLE_SESSIONS) break;
                 char anim_str[32];
                 p = parse_quoted(p, anim_str, sizeof(anim_str));
                 if (!anim_str[0]) break;

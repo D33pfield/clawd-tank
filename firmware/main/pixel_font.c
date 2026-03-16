@@ -93,11 +93,11 @@ static const uint8_t glyph_9[5] = {
 };
 
 static const uint8_t glyph_x[5] = {
-    /* ..... */ 0x00,
     /* #...# */ 0x11,
     /* .#.#. */ 0x0A,
+    /* ..#.. */ 0x04,
+    /* .#.#. */ 0x0A,
     /* #...# */ 0x11,
-    /* ..... */ 0x00,
 };
 
 static const uint8_t glyph_plus[5] = {
