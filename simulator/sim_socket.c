@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -91,7 +92,7 @@ static bool win_queue_pop(sim_win_cmd_t *out) {
 static volatile bool s_pending_config_update = false;
 
 /* ---- Pending state query (socket thread -> main thread) ---- */
-static volatile bool s_query_pending = false;
+static atomic_bool s_query_pending = false;
 
 /* ---- TCP listener thread ---- */
 static int s_listen_fd = -1;
@@ -328,11 +329,7 @@ bool sim_socket_process_window_cmds(void (*handler)(const sim_win_cmd_t *cmd)) {
 }
 
 bool sim_socket_has_pending_query(void) {
-    if (s_query_pending) {
-        s_query_pending = false;
-        return true;
-    }
-    return false;
+    return atomic_exchange(&s_query_pending, false);
 }
 
 bool sim_socket_send_event(const char *json_line) {

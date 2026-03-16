@@ -96,6 +96,11 @@ def load_sessions(path: Path = SESSIONS_PATH) -> tuple[dict[str, dict], list[tup
         if not isinstance(next_id, int) or next_id < 1:
             next_id = 1
 
+        # Synthesize order from session keys when missing (old format upgrade)
+        if not order and valid:
+            order = [(sid, i + 1) for i, sid in enumerate(valid)]
+            next_id = len(valid) + 1
+
         return valid, order, next_id
     except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
         return {}, [], 1

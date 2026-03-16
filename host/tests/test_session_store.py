@@ -137,7 +137,7 @@ def test_save_is_atomic(tmp_path):
 
 
 def test_load_old_format_backwards_compat(tmp_path):
-    """Old format (flat dict, no envelope) is loaded correctly."""
+    """Old format (flat dict, no envelope) synthesizes order from session keys."""
     path = tmp_path / "sessions.json"
     path.write_text(json.dumps({
         "s1": {"state": "working", "last_event": 1234567890.0},
@@ -145,8 +145,8 @@ def test_load_old_format_backwards_compat(tmp_path):
     loaded, order, next_id = load_sessions(path)
     assert "s1" in loaded
     assert loaded["s1"]["state"] == "working"
-    assert order == []
-    assert next_id == 1
+    assert order == [("s1", 1)]
+    assert next_id == 2
 
 
 # --- Session order persistence ---
@@ -163,9 +163,9 @@ def test_session_order_round_trip(tmp_path):
 
 
 def test_session_order_default_empty(tmp_path):
-    """When saved without order, loading returns empty order and next_id=1."""
+    """When saved without order, loading synthesizes order from valid sessions."""
     path = tmp_path / "sessions.json"
     save_sessions({"s1": {"state": "idle", "last_event": 1.0}}, path)
     _, order, next_id = load_sessions(path)
-    assert order == []
-    assert next_id == 1
+    assert order == [("s1", 1)]
+    assert next_id == 2

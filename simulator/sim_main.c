@@ -173,11 +173,14 @@ static void run_headless(void)
                 scene_t *scene = ui_manager_get_scene();
                 char *state_json = scene_get_state_json(scene);
                 if (state_json) {
-                    char *response = malloc(strlen(state_json) + 32);
-                    snprintf(response, strlen(state_json) + 32,
-                             "{\"event\":\"state\",%s", state_json + 1);
-                    sim_socket_send_event(response);
-                    free(response);
+                    size_t len = strlen(state_json) + 32;
+                    char *response = malloc(len);
+                    if (response) {
+                        snprintf(response, len,
+                                 "{\"event\":\"state\",%s", state_json + 1);
+                        sim_socket_send_event(response);
+                        free(response);
+                    }
                     free(state_json);
                 }
             }
@@ -323,11 +326,14 @@ static void run_interactive(void)
                 scene_t *scene = ui_manager_get_scene();
                 char *state_json = scene_get_state_json(scene);
                 if (state_json) {
-                    char *response = malloc(strlen(state_json) + 32);
-                    snprintf(response, strlen(state_json) + 32,
-                             "{\"event\":\"state\",%s", state_json + 1);
-                    sim_socket_send_event(response);
-                    free(response);
+                    size_t len = strlen(state_json) + 32;
+                    char *response = malloc(len);
+                    if (response) {
+                        snprintf(response, len,
+                                 "{\"event\":\"state\",%s", state_json + 1);
+                        sim_socket_send_event(response);
+                        free(response);
+                    }
                     free(state_json);
                 }
             }

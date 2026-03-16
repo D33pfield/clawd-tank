@@ -122,7 +122,7 @@
       <span style="font-size:13px;font-weight:600;">Export / Import</span>
       <div style="display:flex;gap:4px;">
         <button class="btn" onclick="showImport()">Import</button>
-        <button class="btn" onclick="copyExport()">Copy</button>
+        <button class="btn" onclick="copyExport(event)">Copy</button>
       </div>
     </div>
     <div id="export-box" class="export-box">Add sprites to see export...</div>
@@ -578,11 +578,11 @@ function updateExport() {
   box.textContent = lines.join('\n\n');
 }
 
-function copyExport() {
+function copyExport(ev) {
   // Copy only the JSON line for clean import
   const json = JSON.stringify(getExportData());
   navigator.clipboard.writeText(json).then(() => {
-    const b = event.target; b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy', 1200);
+    const b = ev.target; b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy', 1200);
   });
 }
 
