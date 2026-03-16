@@ -491,8 +491,8 @@ scene_t *scene_create(lv_obj_t *parent)
 
     /* HUD: subagent counter canvas (top-left) */
     s->hud_canvas = lv_canvas_create(s->container);
-    static uint8_t hud_buf[80 * 12 * 4];
-    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 80, 12, LV_COLOR_FORMAT_ARGB8888);
+    static uint8_t hud_buf[80 * 15 * 4];
+    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 80, 15, LV_COLOR_FORMAT_ARGB8888);
     lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 4, 4);
     lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
 
