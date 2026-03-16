@@ -22,6 +22,7 @@
 #include "assets/sprite_building.h"
 #include "assets/sprite_confused.h"
 #include "assets/sprite_sweeping.h"
+#include "assets/sprite_walking.h"
 #include "rle_sprite.h"
 #include "pixel_font.h"
 
@@ -172,14 +173,13 @@ static const anim_def_t anim_defs[] = {
         .y_offset = 8,
     },
     [CLAWD_ANIM_WALKING] = {
-        /* Placeholder — reuses idle sprite until walking sprite is created */
-        .rle_data = idle_rle_data,
-        .frame_offsets = idle_frame_offsets,
-        .frame_count = IDLE_FRAME_COUNT,
-        .frame_ms = IDLE_FRAME_MS,
+        .rle_data = walking_rle_data,
+        .frame_offsets = walking_frame_offsets,
+        .frame_count = WALKING_FRAME_COUNT,
+        .frame_ms = (1000 / 8),  /* 125ms @ 8fps */
         .looping = true,
-        .width = IDLE_WIDTH,
-        .height = IDLE_HEIGHT,
+        .width = WALKING_WIDTH,
+        .height = WALKING_HEIGHT,
         .y_offset = 8,
     },
 };
@@ -234,6 +234,7 @@ struct scene_t {
     /* Clawd sprite slots (1 per visible session) */
     clawd_slot_t slots[MAX_SLOTS];
     int active_slot_count;
+    bool narrow;  /* true when scene is in notification-width mode (107px) */
 
     /* Time label */
     lv_obj_t *time_label;
@@ -421,6 +422,7 @@ scene_t *scene_create(lv_obj_t *parent)
         s->slots[i].display_id = 0;
     }
     s->active_slot_count = 1;
+    s->narrow = false;
     scene_activate_slot(s, 0, CLAWD_ANIM_IDLE);
 
     /* Time label — top-right */
@@ -457,6 +459,30 @@ scene_t *scene_create(lv_obj_t *parent)
 void scene_set_width(scene_t *scene, int width_px, int anim_ms)
 {
     if (!scene) return;
+
+    bool was_narrow = scene->narrow;
+    scene->narrow = (width_px < 320);
+
+    /* In narrow mode, hide all slots except 0; restore when going wide */
+    if (scene->narrow && !was_narrow) {
+        for (int i = 1; i < MAX_SLOTS; i++) {
+            if (scene->slots[i].active && scene->slots[i].sprite_img) {
+                lv_obj_add_flag(scene->slots[i].sprite_img, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        /* Re-center slot 0 for narrow container */
+        if (scene->slots[0].active) {
+            scene->slots[0].x_off = 0;
+            const anim_def_t *def = &anim_defs[scene->slots[0].cur_anim];
+            lv_obj_align(scene->slots[0].sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
+        }
+    } else if (!scene->narrow && was_narrow) {
+        for (int i = 1; i < MAX_SLOTS; i++) {
+            if (scene->slots[i].active && scene->slots[i].sprite_img) {
+                lv_obj_clear_flag(scene->slots[i].sprite_img, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
 
     if (anim_ms <= 0) {
         lv_obj_set_width(scene->container, width_px);
@@ -797,6 +823,15 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
     /* Deactivate remaining slots beyond count */
     for (int i = count; i < MAX_SLOTS; i++) {
         s->slots[i].active = false;
+    }
+
+    /* In narrow mode, hide all slots except 0 */
+    if (s->narrow) {
+        for (int i = 1; i < count; i++) {
+            if (s->slots[i].sprite_img) {
+                lv_obj_add_flag(s->slots[i].sprite_img, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
     }
 
     scene_update_hud(s, subagent_count, overflow);
