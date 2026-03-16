@@ -307,6 +307,30 @@ static void fade_complete_cb(lv_anim_t *a) {
     lv_obj_delete(obj);
 }
 
+static void walk_in_complete_cb(lv_anim_t *a) {
+    /* The anim var is the sprite_img. We need to find the slot that owns it.
+     * Walk through the scene's slots (stored in the container's user_data). */
+    lv_obj_t *sprite = (lv_obj_t *)a->var;
+    lv_obj_t *container = lv_obj_get_parent(sprite);
+    scene_t *s = (scene_t *)lv_obj_get_user_data(container);
+    if (!s) return;
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        if (s->slots[i].sprite_img == sprite && s->slots[i].active) {
+            clawd_anim_id_t target = s->slots[i].fallback_anim;
+            if (s->slots[i].cur_anim == CLAWD_ANIM_WALKING && target != CLAWD_ANIM_WALKING) {
+                s->slots[i].cur_anim = target;
+                s->slots[i].frame_idx = 0;
+                s->slots[i].last_frame_tick = lv_tick_get();
+                decode_and_apply_frame(&s->slots[i]);
+                const anim_def_t *def = &anim_defs[target];
+                lv_obj_set_size(sprite, def->width, def->height);
+                lv_obj_align(sprite, LV_ALIGN_BOTTOM_MID, s->slots[i].x_off, def->y_offset);
+            }
+            break;
+        }
+    }
+}
+
 static void slide_slot_to(clawd_slot_t *slot, int target_x, int duration_ms) {
     lv_anim_t a;
     lv_anim_init(&a);
@@ -367,6 +391,7 @@ scene_t *scene_create(lv_obj_t *parent)
     lv_obj_set_style_clip_corner(s->container, true, 0);
     lv_obj_set_scrollbar_mode(s->container, LV_SCROLLBAR_MODE_OFF);
     lv_obj_clear_flag(s->container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_user_data(s->container, s);  /* for walk_in_complete_cb */
 
     /* Sky background — gradient top to bottom */
     s->sky = lv_obj_create(s->container);
@@ -789,15 +814,37 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             lv_obj_align(s->slots[new_i].sprite_img, LV_ALIGN_BOTTOM_MID,
                          x_off, def->y_offset);
         } else {
-            /* New session — activate fresh.
-             * scene_activate_slot aligns at BOTTOM_MID, 0, y_offset.
-             * Then re-align with the correct x_off for this slot position. */
-            scene_activate_slot(s, new_i, (clawd_anim_id_t)anims[new_i]);
+            /* New session — walk in from off-screen right.
+             * Activate with walking animation, position off-screen,
+             * slide to target, then switch to session animation. */
+            scene_activate_slot(s, new_i, CLAWD_ANIM_WALKING);
             s->slots[new_i].display_id = ids[new_i];
             s->slots[new_i].x_off = x_off;
-            const anim_def_t *def = &anim_defs[anims[new_i]];
-            lv_obj_align(s->slots[new_i].sprite_img, LV_ALIGN_BOTTOM_MID,
-                         x_off, def->y_offset);
+            s->slots[new_i].fallback_anim = (clawd_anim_id_t)anims[new_i];
+
+            const anim_def_t *walk_def = &anim_defs[CLAWD_ANIM_WALKING];
+            /* Start off-screen right: use absolute positioning */
+            lv_obj_set_size(s->slots[new_i].sprite_img, walk_def->width, walk_def->height);
+            lv_obj_set_pos(s->slots[new_i].sprite_img,
+                           340,  /* off-screen right */
+                           SCENE_HEIGHT - walk_def->height + walk_def->y_offset);
+
+            /* Compute target X from alignment math:
+             * BOTTOM_MID with x_off means center = container_width/2 + x_off,
+             * then subtract half sprite width for the left edge. */
+            int container_w = lv_obj_get_width(s->container);
+            int target_x = container_w / 2 + x_off - walk_def->width / 2;
+
+            /* Slide in with walk_in_complete_cb to switch to session anim */
+            lv_anim_t walk_a;
+            lv_anim_init(&walk_a);
+            lv_anim_set_var(&walk_a, s->slots[new_i].sprite_img);
+            lv_anim_set_values(&walk_a, 340, target_x);
+            lv_anim_set_duration(&walk_a, 800);
+            lv_anim_set_path_cb(&walk_a, lv_anim_path_ease_out);
+            lv_anim_set_exec_cb(&walk_a, (lv_anim_exec_xcb_t)lv_obj_set_x);
+            lv_anim_set_completed_cb(&walk_a, walk_in_complete_cb);
+            lv_anim_start(&walk_a);
         }
     }
 
