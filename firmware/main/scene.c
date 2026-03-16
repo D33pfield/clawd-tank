@@ -198,7 +198,8 @@ static const anim_def_t anim_defs[] = {
 
 /* ---------- Multi-slot support ---------- */
 
-#define MAX_SLOTS 4
+#define MAX_VISIBLE 4   /* max active sessions on screen (matches daemon protocol) */
+#define MAX_SLOTS  8    /* slot array size: active + departing (going-away animation) */
 
 typedef struct {
     lv_obj_t *sprite_img;
@@ -864,7 +865,7 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
 {
     if (!s) return;
     if (count < 1) return;
-    if (count > MAX_SLOTS) count = MAX_SLOTS;
+    if (count > MAX_VISIBLE) count = MAX_VISIBLE;
 
     /* ------ Single-session fast path ------
      *
@@ -1001,11 +1002,9 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
     }
 
     /* Pre-scan: will any old sessions depart (not matched by new IDs)?
-     * If so, we defer repositioning walks until the going-away animation finishes.
-     * Only defer when count < MAX_SLOTS — when all 4 slots are active,
-     * there's no room for departing slots and orphans get deleted immediately. */
+     * If so, we defer repositioning walks until the going-away animation finishes. */
     bool will_have_departing = false;
-    if (!s->narrow && count < MAX_SLOTS) {
+    if (!s->narrow) {
         for (int i = 0; i < old_count; i++) {
             if (old_slots[i].active && find_id_in(ids, count, old_ids[i]) < 0) {
                 will_have_departing = true;
