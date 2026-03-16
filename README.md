@@ -1,4 +1,8 @@
-# Clawd Tank
+<p align="center">
+  <img src="assets/app-icon.svg" width="128" height="128" alt="Clawd Tank App Icon">
+</p>
+
+<h1 align="center">Clawd Tank</h1>
 
 A tiny desktop aquarium for your Claude Code sessions.
 
