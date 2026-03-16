@@ -1035,6 +1035,8 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
 }
 
 #ifdef SIMULATOR
+#include "cJSON.h"
+
 void scene_get_anim_info(scene_t *scene, int *frame_count, int *frame_ms)
 {
     if (!scene) { *frame_count = 0; *frame_ms = 0; return; }
@@ -1048,5 +1050,59 @@ int scene_get_frame_idx(scene_t *scene)
 {
     if (!scene) return 0;
     return scene->slots[0].frame_idx;
+}
+
+const char *anim_id_to_name(clawd_anim_id_t id)
+{
+    static const char *names[] = {
+        "idle", "alert", "happy", "sleeping", "disconnected",
+        "thinking", "typing", "juggling", "building", "confused",
+        "sweeping", "walking"
+    };
+    if ((int)id < (int)(sizeof(names) / sizeof(names[0]))) return names[id];
+    return "unknown";
+}
+
+char *scene_get_state_json(scene_t *scene)
+{
+    if (!scene) return NULL;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return NULL;
+
+    cJSON_AddBoolToObject(root, "narrow", scene->narrow);
+    cJSON_AddNumberToObject(root, "container_width",
+                            lv_obj_get_width(scene->container));
+    cJSON_AddNumberToObject(root, "active_slot_count", scene->active_slot_count);
+
+    cJSON *slots = cJSON_AddArrayToObject(root, "slots");
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        clawd_slot_t *slot = &scene->slots[i];
+        cJSON *s = cJSON_CreateObject();
+        cJSON_AddNumberToObject(s, "index", i);
+        cJSON_AddBoolToObject(s, "active", slot->active);
+        cJSON_AddNumberToObject(s, "display_id", slot->display_id);
+        cJSON_AddStringToObject(s, "anim", anim_id_to_name(slot->cur_anim));
+        cJSON_AddNumberToObject(s, "anim_id", (int)slot->cur_anim);
+        cJSON_AddStringToObject(s, "fallback", anim_id_to_name(slot->fallback_anim));
+        cJSON_AddNumberToObject(s, "frame_idx", slot->frame_idx);
+        cJSON_AddBoolToObject(s, "walking_in", slot->walking_in);
+        cJSON_AddNumberToObject(s, "x_off", slot->x_off);
+        if (slot->sprite_img) {
+            cJSON_AddNumberToObject(s, "x", lv_obj_get_x(slot->sprite_img));
+            cJSON_AddNumberToObject(s, "y", lv_obj_get_y(slot->sprite_img));
+            cJSON_AddNumberToObject(s, "w", lv_obj_get_width(slot->sprite_img));
+            cJSON_AddNumberToObject(s, "h", lv_obj_get_height(slot->sprite_img));
+        }
+        cJSON_AddItemToArray(slots, s);
+    }
+
+    cJSON *hud = cJSON_AddObjectToObject(root, "hud");
+    cJSON_AddNumberToObject(hud, "subagent_count", scene->hud_subagent_count);
+    cJSON_AddNumberToObject(hud, "overflow", scene->hud_overflow);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return json;
 }
 #endif

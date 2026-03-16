@@ -31,4 +31,6 @@ void scene_set_sessions(scene_t *scene, const uint8_t *anims, const uint16_t *id
 #ifdef SIMULATOR
 void scene_get_anim_info(scene_t *scene, int *frame_count, int *frame_ms);
 int scene_get_frame_idx(scene_t *scene);
+const char *anim_id_to_name(clawd_anim_id_t id);
+char *scene_get_state_json(scene_t *scene);
 #endif
