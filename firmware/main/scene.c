@@ -24,6 +24,7 @@
 #include "assets/sprite_sweeping.h"
 #include "assets/sprite_walking.h"
 #include "assets/sprite_going_away.h"
+#include "assets/sprite_mini_crab.h"
 #include "rle_sprite.h"
 #include "pixel_font.h"
 
@@ -260,9 +261,11 @@ struct scene_t {
 
     /* HUD overlay */
     lv_obj_t *hud_canvas;        /* canvas for subagent counter (left) */
-    lv_obj_t *hud_badge_canvas;  /* canvas for overflow/total badge (right, follows container edge) */
+    lv_obj_t *hud_badge_canvas;  /* canvas for overflow/total badge (right of screen) */
     uint8_t hud_subagent_count;
     uint8_t hud_overflow;
+    int mini_crab_frame;         /* current frame for mini-crab animation in HUD */
+    uint32_t mini_crab_last_tick;
 };
 
 /* ---------- Helpers ---------- */
@@ -483,8 +486,8 @@ scene_t *scene_create(lv_obj_t *parent)
     lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 4, 4);
     lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
 
-    /* HUD: overflow/total badge canvas (top-right, follows container edge) */
-    s->hud_badge_canvas = lv_canvas_create(s->container);
+    /* HUD: overflow/total badge canvas (top-right of SCREEN, not container) */
+    s->hud_badge_canvas = lv_canvas_create(lv_screen_active());
     static uint8_t badge_buf[48 * 12 * 4];
     lv_canvas_set_buffer(s->hud_badge_canvas, badge_buf, 48, 12, LV_COLOR_FORMAT_ARGB8888);
     lv_obj_align(s->hud_badge_canvas, LV_ALIGN_TOP_RIGHT, -4, 4);
@@ -492,6 +495,8 @@ scene_t *scene_create(lv_obj_t *parent)
 
     s->hud_subagent_count = 0;
     s->hud_overflow = 0;
+    s->mini_crab_frame = 0;
+    s->mini_crab_last_tick = 0;
 
     return s;
 }
@@ -505,8 +510,9 @@ static const int x_centers[][4] = {
     {64, 128, 192, 256} /* 4 sessions */
 };
 
-/* Forward declaration — defined after scene_set_width */
+/* Forward declarations — defined after scene_set_width */
 static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflow, int total_sessions);
+static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy);
 
 /* ---------- Width animation ---------- */
 
@@ -543,8 +549,7 @@ void scene_set_width(scene_t *scene, int width_px, int anim_ms)
             /* Check if this child is a known scene element */
             bool is_known = (child == scene->sky || child == scene->grass ||
                              child == scene->time_label || child == scene->noconn_label ||
-                             child == scene->hud_canvas ||
-                             child == scene->hud_badge_canvas);
+                             child == scene->hud_canvas);
             if (!is_known) {
                 for (int si = 0; si < STAR_COUNT && !is_known; si++)
                     if (scene->stars[si] == child) is_known = true;
@@ -800,6 +805,21 @@ void scene_tick(scene_t *scene)
             scene->star_next_toggle[i] = now + random_range(STAR_TWINKLE_MIN, STAR_TWINKLE_MAX);
         }
     }
+
+    /* Mini-crab HUD animation (4fps) */
+    if (scene->hud_subagent_count > 0) {
+        uint32_t mc_elapsed = now - scene->mini_crab_last_tick;
+        if (mc_elapsed >= 250) {  /* 250ms = 4fps */
+            scene->mini_crab_last_tick = now;
+            scene->mini_crab_frame = (scene->mini_crab_frame + 1) % MINI_CRAB_FRAME_COUNT;
+            /* Redraw the subagent canvas with the new frame */
+            lv_canvas_fill_bg(scene->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
+            hud_blit_mini_crab(scene->hud_canvas, scene->mini_crab_frame, 0, 0);
+            char buf[8];
+            snprintf(buf, sizeof(buf), "x%d", scene->hud_subagent_count);
+            pixel_font_draw(scene->hud_canvas, buf, MINI_CRAB_WIDTH + 2, 1, 2, lv_color_hex(0xFFC107));
+        }
+    }
 }
 
 /* ---------- Oneshot query ---------- */
@@ -826,16 +846,35 @@ static int find_id_in(const uint16_t *ids, int count, uint16_t target)
 
 /* ---------- HUD overlay ---------- */
 
+/* Blit a mini-crab RLE frame onto an ARGB8888 canvas at (dx, dy) */
+static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy)
+{
+    if (frame_idx < 0 || frame_idx >= MINI_CRAB_FRAME_COUNT) return;
+    const uint16_t *rle = &mini_crab_rle_data[mini_crab_frame_offsets[frame_idx]];
+    uint8_t decoded[MINI_CRAB_WIDTH * MINI_CRAB_HEIGHT * 4];
+    rle_decode_argb8888(rle, decoded, MINI_CRAB_WIDTH * MINI_CRAB_HEIGHT, TRANSPARENT_KEY);
+    for (int y = 0; y < MINI_CRAB_HEIGHT; y++) {
+        for (int x = 0; x < MINI_CRAB_WIDTH; x++) {
+            int src = (y * MINI_CRAB_WIDTH + x) * 4;
+            if (decoded[src + 3] == 0) continue;  /* skip transparent */
+            lv_canvas_set_px(canvas, dx + x, dy + y,
+                             lv_color_make(decoded[src + 2], decoded[src + 1], decoded[src]),
+                             decoded[src + 3]);
+        }
+    }
+}
+
 static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflow, int total_sessions) {
     s->hud_subagent_count = subagent_count;
     s->hud_overflow = overflow;
 
-    /* --- Subagent counter (left canvas) --- */
+    /* --- Subagent counter (left canvas): mini-crab icon + "×N" --- */
     if (subagent_count > 0) {
         lv_canvas_fill_bg(s->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
+        hud_blit_mini_crab(s->hud_canvas, s->mini_crab_frame, 0, 0);
         char buf[8];
         snprintf(buf, sizeof(buf), "x%d", subagent_count);
-        pixel_font_draw(s->hud_canvas, buf, 4, 1, 2, lv_color_hex(0xFFC107));
+        pixel_font_draw(s->hud_canvas, buf, MINI_CRAB_WIDTH + 2, 1, 2, lv_color_hex(0xFFC107));
         lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
