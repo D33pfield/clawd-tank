@@ -1032,8 +1032,9 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
                 s->slots[new_i].x_off = x_off;
                 s->slots[new_i].fallback_anim = new_anim;
 
-                if (old_x_off != x_off) {
-                    /* Position changed — walk to new position immediately */
+                if (old_x_off != x_off && !s->narrow) {
+                    /* Position changed — walk to new position immediately.
+                     * Skip in narrow mode — the narrow guard handles centering. */
                     s->slots[new_i].cur_anim = CLAWD_ANIM_WALKING;
                     s->slots[new_i].frame_idx = 0;
                     s->slots[new_i].last_frame_tick = lv_tick_get();
