@@ -1001,9 +1001,11 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
     }
 
     /* Pre-scan: will any old sessions depart (not matched by new IDs)?
-     * If so, we defer repositioning walks until the going-away animation finishes. */
+     * If so, we defer repositioning walks until the going-away animation finishes.
+     * Only defer when count < MAX_SLOTS — when all 4 slots are active,
+     * there's no room for departing slots and orphans get deleted immediately. */
     bool will_have_departing = false;
-    if (!s->narrow) {
+    if (!s->narrow && count < MAX_SLOTS) {
         for (int i = 0; i < old_count; i++) {
             if (old_slots[i].active && find_id_in(ids, count, old_ids[i]) < 0) {
                 will_have_departing = true;
