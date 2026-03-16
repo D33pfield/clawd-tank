@@ -192,6 +192,7 @@ def test_staleness_keeps_fresh_sessions():
 
 @pytest.mark.asyncio
 async def test_compact_triggers_sweeping():
+    """V2 transport receives set_sessions with 'sweeping' for the compacting session."""
     d = make_daemon()
     _add_session(d, "s1", {"state": "working", "last_event": time.time()})
     transport = AsyncMock()
@@ -205,9 +206,10 @@ async def test_compact_triggers_sweeping():
 
     calls = transport.write_notification.call_args_list
     payloads = [json.loads(c[0][0]) for c in calls]
-    assert any(p.get("status") == "sweeping" for p in payloads)
-    # The fallback is now a v2 set_sessions payload
-    assert any(p.get("action") == "set_sessions" for p in payloads)
+    # V2: single set_sessions payload with the compacting session showing "sweeping"
+    session_payloads = [p for p in payloads if p.get("action") == "set_sessions"]
+    assert len(session_payloads) == 1
+    assert "sweeping" in session_payloads[0]["anims"]
 
 
 # --- Subagent tracking ---
@@ -744,3 +746,39 @@ async def test_ble_transport_version_read_on_connect():
     version = await transport.read_version()
     d._transport_versions["ble"] = version
     assert d._transport_versions.get("ble") == 2
+
+
+# --- Per-session sweeping (Task 6) ---
+
+
+class MockTransport:
+    """Minimal transport stub that captures written payloads."""
+
+    def __init__(self, name: str = "mock"):
+        self.name = name
+        self.is_connected = True
+        self.written: list[str] = []
+
+    async def write_notification(self, payload: str) -> None:
+        self.written.append(payload)
+
+
+@pytest.mark.asyncio
+async def test_compact_sends_per_session_sweeping_v2():
+    """V2 transport should receive set_sessions with sweeping for the compacting session."""
+    d = make_daemon()
+    d._transport_versions["sim"] = 2
+    transport = MockTransport(name="sim")
+    d._transports["sim"] = transport
+    d._transport_queues["sim"] = asyncio.Queue()
+    await d._handle_message({"event": "session_start", "session_id": "aaa"})
+    await d._handle_message({"event": "tool_use", "session_id": "aaa"})
+    await d._handle_message({"event": "session_start", "session_id": "bbb"})
+    await d._handle_message({"event": "tool_use", "session_id": "bbb"})
+    transport.written.clear()
+    await d._handle_message({"event": "compact", "session_id": "bbb"})
+    payloads = [json.loads(p) for p in transport.written]
+    sweeping_payload = next((p for p in payloads if p.get("action") == "set_sessions"), None)
+    assert sweeping_payload is not None
+    assert sweeping_payload["anims"][1] == "sweeping"  # bbb is second
+    assert sweeping_payload["anims"][0] == "typing"    # aaa unchanged

@@ -152,18 +152,32 @@ class ClawdDaemon:
 
         # --- Handle compact: send sweeping oneshot ---
         if event == "compact":
-            sweeping_payload = json.dumps({"action": "set_status", "status": "sweeping"})
-            for transport in self._transports.values():
-                if transport.is_connected:
-                    await transport.write_notification(sweeping_payload)
             computed = self._compute_display_state()
             for name, transport in self._transports.items():
-                if transport.is_connected:
-                    version = self._transport_versions.get(name, 1)
-                    if version >= 2:
-                        fallback_payload = display_state_to_ble_payload(computed)
-                    else:
-                        fallback_payload = display_state_to_v1_payload(computed)
+                if not transport.is_connected:
+                    continue
+                version = self._transport_versions.get(name, 1)
+                if version >= 2 and session_id:
+                    # V2: send set_sessions with the compacting session's slot as "sweeping"
+                    sweeping_state = self._compute_display_state()
+                    if "anims" in sweeping_state:
+                        for sid, did in self._session_order:
+                            if sid == session_id:
+                                idx = next(
+                                    (i for i, d in enumerate(sweeping_state["ids"]) if d == did),
+                                    None,
+                                )
+                                if idx is not None:
+                                    sweeping_state["anims"][idx] = "sweeping"
+                                break
+                    payload = display_state_to_ble_payload(sweeping_state)
+                    await transport.write_notification(payload)
+                    # No second fallback for v2 — firmware handles sweeping as oneshot
+                else:
+                    # V1: send sweeping oneshot then restore display state
+                    sweeping_payload = json.dumps({"action": "set_status", "status": "sweeping"})
+                    await transport.write_notification(sweeping_payload)
+                    fallback_payload = display_state_to_v1_payload(computed)
                     await transport.write_notification(fallback_payload)
             self._last_display_state = computed
 
