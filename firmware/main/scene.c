@@ -728,11 +728,13 @@ static int find_id_in(const uint16_t *ids, int count, uint16_t target)
 
 /* ---------- HUD overlay ---------- */
 
-static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflow) {
+static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflow, int total_sessions) {
     s->hud_subagent_count = subagent_count;
     s->hud_overflow = overflow;
 
-    if (subagent_count == 0 && overflow == 0) {
+    bool show_subagents = subagent_count > 0;
+    bool show_badge = s->narrow ? (total_sessions > 1) : (overflow > 0);
+    if (!show_subagents && !show_badge) {
         lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
         return;
     }
@@ -746,15 +748,19 @@ static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflo
         /* Draw "xN" for subagent count */
         char buf[8];
         snprintf(buf, sizeof(buf), "x%d", subagent_count);
-        pixel_font_draw(s->hud_canvas, buf, x, 1, 2, lv_color_hex(0x88ccff));
+        pixel_font_draw(s->hud_canvas, buf, x, 1, 2, lv_color_hex(0xFFC107));
     }
 
-    if (overflow > 0) {
-        /* Draw "+N" for overflow at right side */
+    if (s->narrow && total_sessions > 1) {
+        /* Narrow mode: show total session count */
+        char buf[8];
+        snprintf(buf, sizeof(buf), "x%d", total_sessions);
+        pixel_font_draw(s->hud_canvas, buf, 50, 1, 2, lv_color_hex(0x8BC6FC));
+    } else if (!s->narrow && overflow > 0) {
+        /* Full mode: show overflow count */
         char buf[8];
         snprintf(buf, sizeof(buf), "+%d", overflow);
-        /* Position at right side of canvas */
-        pixel_font_draw(s->hud_canvas, buf, 50, 1, 2, lv_color_hex(0xffaa88));
+        pixel_font_draw(s->hud_canvas, buf, 50, 1, 2, lv_color_hex(0x8BC6FC));
     }
 
     lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
@@ -862,7 +868,7 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
         }
 
-        scene_update_hud(s, subagent_count, overflow);
+        scene_update_hud(s, subagent_count, overflow, 1 + overflow);
         s->active_slot_count = 1;
 
         printf("[scene] set_sessions single id=%d anim=%d walking=%d old_x=%d\n",
@@ -1030,7 +1036,7 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
         }
     }
 
-    scene_update_hud(s, subagent_count, overflow);
+    scene_update_hud(s, subagent_count, overflow, count + overflow);
     s->active_slot_count = count;
 }
 
