@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 
 /* ---------- Sprite data includes ---------- */
 
@@ -332,7 +333,7 @@ static void set_sprite_opa(void *obj, int32_t v) {
     lv_obj_set_style_opa(obj, (lv_opa_t)v, 0);
 }
 
-static void fade_complete_cb(lv_anim_t *a) {
+static void __attribute__((unused)) fade_complete_cb(lv_anim_t *a) {
     lv_obj_t *obj = (lv_obj_t *)a->var;
     lv_obj_delete(obj);
 }
@@ -387,7 +388,7 @@ static void scene_activate_slot(scene_t *s, int idx, clawd_anim_id_t anim)
     lv_obj_set_style_opa(slot->sprite_img, LV_OPA_COVER, 0);
 }
 
-static void scene_deactivate_slot(scene_t *s, int idx)
+static void __attribute__((unused)) scene_deactivate_slot(scene_t *s, int idx)
 {
     clawd_slot_t *slot = &s->slots[idx];
     slot->active = false;
@@ -676,7 +677,7 @@ void scene_set_clawd_anim(scene_t *scene, clawd_anim_id_t anim)
     lv_obj_set_size(slot->sprite_img, def->width, def->height);
     lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
     lv_obj_update_layout(slot->sprite_img);
-    printf("[scene] set_clawd_anim anim=%d size=%dx%d y_off=%d container=%dx%d pos=(%d,%d) w=%d h=%d\n",
+    printf("[scene] set_clawd_anim anim=%d size=%dx%d y_off=%d container=%" PRId32 "x%" PRId32 " pos=(%" PRId32 ",%" PRId32 ") w=%" PRId32 " h=%" PRId32 "\n",
            anim, def->width, def->height, def->y_offset,
            lv_obj_get_width(scene->container), lv_obj_get_height(scene->container),
            lv_obj_get_x(slot->sprite_img), lv_obj_get_y(slot->sprite_img),
@@ -896,7 +897,7 @@ static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflo
     bool show_badge = s->narrow ? (total_sessions > 1) : (overflow > 0);
     if (show_badge) {
         lv_canvas_fill_bg(s->hud_badge_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
-        char buf[8];
+        char buf[16];
         if (s->narrow && total_sessions > 1) {
             snprintf(buf, sizeof(buf), "x%d", total_sessions);
         } else {
@@ -1144,7 +1145,6 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             s->slots[new_i].x_off = x_off;
             s->slots[new_i].fallback_anim = (clawd_anim_id_t)anims[new_i];
 
-            const anim_def_t *walk_def = &anim_defs[CLAWD_ANIM_WALKING];
             /* Start off-screen right: large positive X offset from BOTTOM_MID.
              * Y stays as y_offset (already set by scene_activate_slot's align). */
             int start_x_off = 250;  /* well past right edge from center */
