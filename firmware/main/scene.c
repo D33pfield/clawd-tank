@@ -1126,6 +1126,11 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
                  * so the deferred handler in scene_tick detects the diff. */
                 /* x_off NOT updated — stays at old_slots[old_i].x_off */
                 s->slots[new_i].fallback_anim = new_anim;
+                /* Fix stale image pointer: lv_image_set_src stores a pointer
+                 * to frame_dsc. After slot shuffle (e.g. slot 2→1), the widget
+                 * still points to &s->slots[OLD_INDEX].frame_dsc which now
+                 * holds different data. Re-set the source to the new address. */
+                lv_image_set_src(s->slots[new_i].sprite_img, &s->slots[new_i].frame_dsc);
             } else {
                 int old_x_off = old_slots[old_i].x_off;
                 s->slots[new_i].x_off = x_off;
