@@ -2,9 +2,9 @@
 
 Protocol version is exposed by the firmware via a read-only BLE GATT characteristic. The daemon reads it on connect to determine which actions are supported. Absence of the version characteristic implies v1.
 
-## Version 2 (planned)
+## Version 2
 
-**New GATT characteristic:** Protocol version (read-only, returns `"2"`). UUID: TBD (generated during implementation).
+**New GATT characteristic:** Protocol version (read-only, returns `"2"`). UUID: `B6DC9A5B-5041-4B32-9F8D-34321DF8637C`.
 
 **New action: `set_sessions`**
 ```json
@@ -16,14 +16,14 @@ Protocol version is exposed by the firmware via a read-only BLE GATT characteris
   "overflow": 2
 }
 ```
-- `anims` — ordered list of per-session animation names (max 4, ordered by session arrival time). Valid values: `idle`, `typing`, `thinking`, `building`, `confused`.
+- `anims` — ordered list of per-session animation names (max 4, ordered by session arrival time). Valid values: `idle`, `typing`, `thinking`, `building`, `confused`, `sweeping`.
 - `ids` — stable numeric IDs matching each entry in `anims`. Assigned incrementally by the daemon on session arrival (never reused). The firmware diffs against its previous `ids` to determine which Clawds were added or removed for transition animations.
 - `subagents` — total active subagent count across all sessions.
 - `overflow` (optional) — number of additional sessions beyond the 4 visible. Only present when > 0.
 
 Enables multi-session display (multiple Clawds) and subagent HUD counter. Receiving `set_sessions` implicitly clears sleeping/disconnected state.
 
-Note: `sweeping` is NOT a valid `anims` value — it's still sent as a `set_status` oneshot (applies to all visible Clawds). `juggling` is retired as a v1 intensity tier — replaced by showing individual Clawds per session.
+Note: For v2 transports, `sweeping` is sent as a per-session animation in `set_sessions` (only the compacting session sweeps). For v1 transports, `sweeping` is still sent as a `set_status` oneshot. `juggling` is retired as a v1 intensity tier — replaced by showing individual Clawds per session.
 
 **Existing actions unchanged:** `add`, `dismiss`, `clear`, `set_time`, `set_status` all continue to work as in v1.
 
