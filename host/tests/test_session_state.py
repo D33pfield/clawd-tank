@@ -730,3 +730,17 @@ async def test_ble_transport_defaults_v1():
     d = make_daemon()
     d._on_transport_connect("ble")
     assert d._transport_versions.get("ble") is None  # defaults to 1 via .get(name, 1)
+
+
+@pytest.mark.asyncio
+async def test_ble_transport_version_read_on_connect():
+    """BLE transport should read version after connecting."""
+    d = make_daemon()
+    transport = AsyncMock()
+    transport.read_version = AsyncMock(return_value=2)
+    transport.is_connected = True
+    d._transports["ble"] = transport
+    d._transport_queues["ble"] = asyncio.Queue()
+    version = await transport.read_version()
+    d._transport_versions["ble"] = version
+    assert d._transport_versions.get("ble") == 2

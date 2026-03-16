@@ -389,6 +389,15 @@ class ClawdDaemon:
         await transport.ensure_connected()
         if transport.is_connected:
             await self._sync_time_for(transport)
+            # Read protocol version for BLE transports
+            if hasattr(transport, 'read_version'):
+                try:
+                    version = await transport.read_version()
+                    self._transport_versions[name] = version
+                    logger.info("Transport '%s': protocol version %d", name, version)
+                except Exception:
+                    self._transport_versions[name] = 1
+                    logger.warning("Transport '%s': version read failed, defaulting to v1", name)
             await self._replay_active_for(transport, name)
         while self._running:
             try:
