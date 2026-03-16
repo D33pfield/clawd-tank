@@ -232,11 +232,10 @@ void ui_manager_handle_event(const ble_evt_t *evt)
         break;
 
     case BLE_EVT_SET_SESSIONS: {
-        ESP_LOGI(TAG, "Set sessions: %d anims (anim0=%d), %d subagents, %d overflow → %s path",
+        ESP_LOGI(TAG, "Set sessions: %d anims (anim0=%d), %d subagents, %d overflow",
                  evt->session_anim_count,
                  evt->session_anim_count > 0 ? evt->session_anims[0] : -1,
-                 evt->subagent_count, evt->session_overflow,
-                 (evt->session_anim_count == 1 && evt->subagent_count == 0 && evt->session_overflow == 0) ? "LEGACY" : "MULTI");
+                 evt->subagent_count, evt->session_overflow);
 
         /* Wake from sleep if needed */
         if (s_display_status == DISPLAY_STATUS_SLEEPING) {
@@ -244,19 +243,13 @@ void ui_manager_handle_event(const ble_evt_t *evt)
         }
         s_display_status = DISPLAY_STATUS_IDLE;
 
-        if (evt->session_anim_count == 1 && evt->subagent_count == 0 && evt->session_overflow == 0) {
-            /* Single session — use the proven legacy path for correct positioning */
-            clawd_anim_id_t anim = (clawd_anim_id_t)evt->session_anims[0];
-            scene_set_fallback_anim(s_scene, anim);
-            if (!scene_is_playing_oneshot(s_scene)) {
-                scene_set_clawd_anim(s_scene, anim);
-            }
-        } else {
-            /* Multiple sessions or subagents — use multi-slot rendering */
-            scene_set_sessions(s_scene,
-                evt->session_anims, evt->session_ids,
-                evt->session_anim_count, evt->subagent_count, evt->session_overflow);
-        }
+        /* Always use scene_set_sessions() — it has a single-session fast
+         * path that updates slot 0 in place (same sprite object, same
+         * Z-order, oneshot protection) so positioning is identical to the
+         * legacy scene_set_clawd_anim() path.  No shortcut needed. */
+        scene_set_sessions(s_scene,
+            evt->session_anims, evt->session_ids,
+            evt->session_anim_count, evt->subagent_count, evt->session_overflow);
 
         s_last_activity_tick = lv_tick_get();
         break;

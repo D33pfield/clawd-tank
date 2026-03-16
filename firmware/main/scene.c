@@ -198,6 +198,7 @@ typedef struct {
     int frame_idx;
     uint32_t last_frame_tick;
     uint16_t display_id;   /* stable ID from daemon, for diffing */
+    int x_off;             /* last alignment x offset (for re-align after oneshot) */
     bool active;
 } clawd_slot_t;
 
@@ -330,6 +331,7 @@ static void scene_activate_slot(scene_t *s, int idx, clawd_anim_id_t anim)
     slot->fallback_anim = anim;
     slot->frame_idx = 0;
     slot->last_frame_tick = lv_tick_get();
+    slot->x_off = 0;
     decode_and_apply_frame(slot);
     const anim_def_t *def = &anim_defs[anim];
     lv_obj_set_size(slot->sprite_img, def->width, def->height);
@@ -490,6 +492,12 @@ void scene_set_clawd_anim(scene_t *scene, clawd_anim_id_t anim)
     /* Force widget size to match sprite dimensions, then re-align */
     lv_obj_set_size(slot->sprite_img, def->width, def->height);
     lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
+    lv_obj_update_layout(slot->sprite_img);
+    printf("[scene] set_clawd_anim anim=%d size=%dx%d y_off=%d container=%dx%d pos=(%d,%d) w=%d h=%d\n",
+           anim, def->width, def->height, def->y_offset,
+           lv_obj_get_width(scene->container), lv_obj_get_height(scene->container),
+           lv_obj_get_x(slot->sprite_img), lv_obj_get_y(slot->sprite_img),
+           lv_obj_get_width(slot->sprite_img), lv_obj_get_height(slot->sprite_img));
 
     /* Disconnected state: desaturate + show no-connection label */
     if (anim == CLAWD_ANIM_DISCONNECTED) {
@@ -549,10 +557,16 @@ void scene_tick(scene_t *scene)
                 if (slot->frame_idx < def->frame_count - 1) {
                     slot->frame_idx++;
                 } else {
-                    /* Oneshot finished — auto-return to fallback */
+                    /* Oneshot finished — auto-return to fallback.
+                     * Must update widget size and alignment since the fallback
+                     * animation may have different dimensions than the oneshot. */
                     slot->cur_anim = slot->fallback_anim;
                     slot->frame_idx = 0;
                     slot->last_frame_tick = now;
+                    const anim_def_t *fb = &anim_defs[slot->fallback_anim];
+                    lv_obj_set_size(slot->sprite_img, fb->width, fb->height);
+                    lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID,
+                                 slot->x_off, fb->y_offset);
                 }
             }
             decode_and_apply_frame(slot);
@@ -640,6 +654,63 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
     if (count < 1) count = 1;
     if (count > MAX_SLOTS) count = MAX_SLOTS;
 
+    /* ------ Single-session fast path ------
+     *
+     * When count==1, update slot 0 IN PLACE rather than running the full
+     * diffing/destroy/recreate cycle.  This guarantees identical behaviour
+     * to scene_set_clawd_anim() — same LVGL image object, same Z-order,
+     * same alignment maths — so single-session via set_sessions matches
+     * the legacy set_status path pixel-for-pixel.
+     *
+     * The full diff path below is still used for count >= 2. */
+    if (count == 1) {
+        clawd_slot_t *slot = &s->slots[0];
+
+        /* Ensure slot 0 is active (bootstrap from scene_create) */
+        if (!slot->active || !slot->sprite_img) {
+            scene_activate_slot(s, 0, (clawd_anim_id_t)anims[0]);
+        }
+
+        slot->display_id = ids[0];
+        slot->x_off = 0;
+
+        clawd_anim_id_t new_anim = (clawd_anim_id_t)anims[0];
+
+        /* Respect oneshot: set fallback, only change cur_anim if not
+         * currently playing a oneshot animation. */
+        slot->fallback_anim = new_anim;
+
+        const anim_def_t *cur_def = &anim_defs[slot->cur_anim];
+        bool playing_oneshot = !cur_def->looping &&
+                               slot->frame_idx < cur_def->frame_count - 1;
+
+        if (!playing_oneshot && slot->cur_anim != new_anim) {
+            slot->cur_anim = new_anim;
+            slot->frame_idx = 0;
+            slot->last_frame_tick = lv_tick_get();
+            decode_and_apply_frame(slot);
+            const anim_def_t *def = &anim_defs[new_anim];
+            lv_obj_set_size(slot->sprite_img, def->width, def->height);
+            lv_obj_align(slot->sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
+        }
+
+        /* Deactivate any extra slots from a previous multi-session state */
+        for (int i = 1; i < MAX_SLOTS; i++) {
+            if (s->slots[i].active) {
+                scene_deactivate_slot(s, i);
+            }
+        }
+
+        scene_update_hud(s, subagent_count, overflow);
+        s->active_slot_count = 1;
+
+        printf("[scene] set_sessions single id=%d anim=%d playing_oneshot=%d\n",
+               ids[0], new_anim, playing_oneshot);
+        return;
+    }
+
+    /* ------ Multi-session diff path ------ */
+
     /* Save old state to temp — must copy BEFORE reassigning to avoid
      * data corruption when indices overlap (the whole point of diffing). */
     clawd_slot_t old_slots[MAX_SLOTS];
@@ -662,10 +733,9 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
     /* Assign new slots by matching display IDs.
      *
      * Positioning: use lv_obj_align(BOTTOM_MID) for correct Y placement
-     * (feet in grass). For single session, x_off=0 centers the sprite.
-     * For multiple sessions, x_off distributes them across the container.
-     * x_centers[] are absolute pixel positions assuming 320px width;
-     * convert to offsets from center (160) for alignment. */
+     * (feet in grass). For multiple sessions, x_off distributes them
+     * across the container. x_centers[] are absolute pixel positions
+     * assuming 320px width; convert to offsets from center (160). */
     for (int new_i = 0; new_i < count; new_i++) {
         int old_i = find_id_in(old_ids, old_count, ids[new_i]);
         int x_off = x_centers[count - 1][new_i] - 160;
@@ -687,7 +757,9 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             }
 
             /* Reposition */
+            s->slots[new_i].x_off = x_off;
             const anim_def_t *def = &anim_defs[s->slots[new_i].cur_anim];
+            lv_obj_set_size(s->slots[new_i].sprite_img, def->width, def->height);
             lv_obj_align(s->slots[new_i].sprite_img, LV_ALIGN_BOTTOM_MID,
                          x_off, def->y_offset);
         } else {
@@ -696,12 +768,10 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
              * Then re-align with the correct x_off for this slot position. */
             scene_activate_slot(s, new_i, (clawd_anim_id_t)anims[new_i]);
             s->slots[new_i].display_id = ids[new_i];
-            if (count > 1) {
-                const anim_def_t *def = &anim_defs[anims[new_i]];
-                lv_obj_align(s->slots[new_i].sprite_img, LV_ALIGN_BOTTOM_MID,
-                             x_off, def->y_offset);
-            }
-            /* For count==1, scene_activate_slot already aligned at center */
+            s->slots[new_i].x_off = x_off;
+            const anim_def_t *def = &anim_defs[anims[new_i]];
+            lv_obj_align(s->slots[new_i].sprite_img, LV_ALIGN_BOTTOM_MID,
+                         x_off, def->y_offset);
         }
     }
 
