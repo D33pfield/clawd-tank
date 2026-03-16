@@ -346,17 +346,6 @@ static void walk_in_complete_cb(lv_anim_t *a) {
     }
 }
 
-static void slide_slot_to(clawd_slot_t *slot, int target_x, int duration_ms) {
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, slot->sprite_img);
-    lv_anim_set_values(&a, lv_obj_get_x(slot->sprite_img), target_x);
-    lv_anim_set_duration(&a, duration_ms);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
-    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_x);
-    lv_anim_start(&a);
-}
-
 /* ---------- Slot helpers ---------- */
 
 static void scene_activate_slot(scene_t *s, int idx, clawd_anim_id_t anim)
@@ -807,7 +796,7 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
                         int count, uint8_t subagent_count, uint8_t overflow)
 {
     if (!s) return;
-    if (count < 1) count = 1;
+    if (count < 1) return;
     if (count > MAX_SLOTS) count = MAX_SLOTS;
 
     /* ------ Single-session fast path ------
