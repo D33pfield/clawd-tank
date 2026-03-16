@@ -90,6 +90,9 @@ static bool win_queue_pop(sim_win_cmd_t *out) {
 /* ---- Pending config update (socket thread -> main thread) ---- */
 static volatile bool s_pending_config_update = false;
 
+/* ---- Pending state query (socket thread -> main thread) ---- */
+static volatile bool s_query_pending = false;
+
 /* ---- TCP listener thread ---- */
 static int s_listen_fd = -1;
 static int s_client_fd = -1;  /* current client, for shutdown */
@@ -199,6 +202,9 @@ static void handle_client(int client_fd) {
                 } else if (rc == 3) {
                     /* Window command — push to window queue for main thread */
                     handle_window_action(line_start, (uint16_t)line_len);
+                } else if (rc == 4) {
+                    /* State query — flag for main thread (LVGL not thread-safe) */
+                    s_query_pending = true;
                 } else if (rc < 0) {
                     printf("[tcp] Parse error, ignoring: %.*s\n", line_len, line_start);
                 }
@@ -321,24 +327,40 @@ bool sim_socket_process_window_cmds(void (*handler)(const sim_win_cmd_t *cmd)) {
     return any;
 }
 
+bool sim_socket_has_pending_query(void) {
+    if (s_query_pending) {
+        s_query_pending = false;
+        return true;
+    }
+    return false;
+}
+
 bool sim_socket_send_event(const char *json_line) {
     if (!json_line) return false;
 
     /* Build the full message (json + newline) before acquiring the mutex
      * so we can send it in a single call while holding the lock. */
     size_t len = strlen(json_line);
-    char buf[512];
-    if (len + 1 >= sizeof(buf)) return false;  /* message too long */
+    char stack_buf[512];
+    char *buf = stack_buf;
+    bool heap = false;
+    if (len + 1 >= sizeof(stack_buf)) {
+        buf = malloc(len + 2);
+        if (!buf) return false;
+        heap = true;
+    }
     memcpy(buf, json_line, len);
     buf[len] = '\n';
 
     pthread_mutex_lock(&s_client_mutex);
     if (s_client_fd < 0) {
         pthread_mutex_unlock(&s_client_mutex);
+        if (heap) free(buf);
         return false;
     }
     ssize_t sent = send(s_client_fd, buf, len + 1, 0);
     pthread_mutex_unlock(&s_client_mutex);
+    if (heap) free(buf);
     return sent >= 0;
 }
 

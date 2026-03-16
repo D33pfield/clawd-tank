@@ -41,11 +41,12 @@ After generating the header file, ensure the new animation is properly reference
 When generating or editing SVGs, adhere strictly to these constraints:
 
 1. **Reference Design:** The reference design for the Clawd character is `assets/svg-animations/clawd-static-base.svg`. Always base your new animations and static designs on this SVG to ensure consistency in character dimensions, base colors (e.g., `#DE886D` body), and structure.
-2. **Resolution & Scaling:** The final display resolution is 320x172, but Clawd's sprite area typically transitions between 107px (when notifications are visible) and 320px (when idle). Design SVGs with a clear internal viewBox that scales well to these dimensions.
+2. **Resolution & Scaling:** The final display resolution is 320x172, but Clawd's sprite area typically transitions between 107px (when notifications are visible) and 320px (when idle). Design SVGs with a clear internal viewBox that scales well to these dimensions. For consistency in state-transition or 'working' animations, standardize on `viewBox="-15 -25 45 45"` and `width="500"`, `height="500"`.
 3. **Transparency Key:** The firmware uses `0x18C5` (approx RGB: 24, 196, 40 or `#18c428`) as the transparent color key. **Do not use this exact green in your visible artwork**, or it will become transparent on the display.
 4. **Color Palette:** The display is 16-bit RGB565. Gradients and highly complex shading can result in banding. Prefer solid colors, flat shading, and a consistent pixel-art aesthetic. 
-5. **Animation Complexity:** Keep SVGs lean. The Python conversion script needs to render them reliably. Avoid overly complex SVG filters or external raster image references within the SVG.
+5. **Animation Complexity:** Keep SVGs lean. The Python conversion script needs to render them reliably. Avoid overly complex SVG filters or external raster image references within the SVG. **When designing CSS `@keyframes`, avoid overlapping percentage ranges (e.g., `0%, 35%`). To hold a state, explicitly define the start and end percentages with the same value (e.g., `0% { transform: translateY(0); } 35% { transform: translateY(0); }`) to prevent unintended interpolation.**
 6. **Looping:** Most animations (Idle, Working, Sleeping) should loop seamlessly. Ensure the first and last frames of your SVG animations match up.
+7. **Animation Workflow:** When asked to create or update an animation, **first create or modify the SVG file ONLY and ask the user for visual feedback**. Do not proceed to run conversion scripts or make firmware/C header changes until the SVG is explicitly approved.
 
 ## Testing Animations
 

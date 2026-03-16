@@ -72,6 +72,7 @@ The window is borderless and resizable by default — drag from center, resize f
 - `{"action":"show_window"}` — show the SDL window
 - `{"action":"hide_window"}` — hide it (process stays alive)
 - `{"action":"set_window","pinned":true}` — toggle always-on-top
+- `{"action":"query_state"}` — returns JSON with current slot state, animations, and positions (debug)
 
 **Outbound events** (simulator → client):
 - `{"event":"window_hidden"}` — sent when the user closes the window (Cmd+W / X button)
@@ -86,7 +87,7 @@ cd host && ./build.sh --install
 cd host && ./build.sh
 ```
 
-The build script automatically builds the static simulator if missing/outdated, runs `py2app`, and copies the sim binary into the `.app` bundle.
+The build script always rebuilds the static simulator, runs `py2app`, and copies the sim binary into the `.app` bundle.
 
 ### Tests
 
@@ -132,7 +133,9 @@ Claude Code hooks (SessionStart/PreToolUse/PreCompact/Stop/Notification/UserProm
     → ~/.clawd-tank/clawd-tank-notify → Unix socket → clawd_tank_daemon → BLE → ESP32-C6 firmware
                                                                         ↘ TCP → Simulator (SDL2)
     Session state tracking (daemon):
-        dict[session_id → state] → _compute_display_state() → set_status action → device animation
+        dict[session_id → state] → _compute_display_state()
+            v2 transports: → set_sessions action (per-session anims + UUIDs) → multi-slot rendering
+            v1 transports: → set_status action (single aggregated animation)
         Persisted to ~/.clawd-tank/sessions.json on structural changes (survives daemon restart)
 
     Notification cards (daemon):
@@ -142,9 +145,9 @@ Claude Code hooks (SessionStart/PreToolUse/PreCompact/Stop/Notification/UserProm
 ### Firmware (`firmware/main/`)
 
 - **main.c** — Entry point. Creates FreeRTOS event queue, inits display/BLE, spawns `ui_task`.
-- **ble_service.c** — NimBLE GATT server. Parses JSON payloads (`add`/`dismiss`/`clear`/`set_time`/`set_status` actions), posts `ble_evt_t` to queue. Handles time sync and timezone from host.
+- **ble_service.c** — NimBLE GATT server. Parses JSON payloads (`add`/`dismiss`/`clear`/`set_time`/`set_status`/`set_sessions` actions), posts `ble_evt_t` to queue. Handles time sync and timezone from host. Exposes a protocol version GATT characteristic (v2) for capability negotiation.
 - **ui_manager.c** — State machine coordinator. Bridges BLE events to scene and notification UI. Handles `set_status` for working animations with backlight control for sleep/wake. Time display, RGB LED flash, LVGL tick.
-- **scene.c** — Clawd sprite animation engine. 11 states (IDLE, ALERT, HAPPY, SLEEPING, DISCONNECTED, THINKING, TYPING, JUGGLING, BUILDING, CONFUSED, SWEEPING). Fallback animation mechanism for oneshot return. Manages sky/stars/grass background and scene width transitions (107px with notifications, 320px idle).
+- **scene.c** — Clawd sprite animation engine. 14 animations (IDLE, ALERT, HAPPY, SLEEPING, DISCONNECTED, THINKING, TYPING, JUGGLING, BUILDING, CONFUSED, SWEEPING, GOING_AWAY, WALKING, MINI_CLAWD). Multi-slot rendering with `MAX_VISIBLE=4` display slots and `MAX_SLOTS=8` (extra slots for departing animations). Walk-in animation for new sessions, going-away burrowing animation for session exits with deferred repositioning. HUD overlay with pixel-art bitmap font for subagent counter and session overflow badge. Fallback animation mechanism for oneshot return. Manages sky/stars/grass background and scene width transitions (107px with notifications, 320px idle). Debug introspection via `scene_get_state_json()` for `query_state` TCP action.
 - **notification_ui.c** — LVGL card rendering. Auto-rotating featured card + compact list. 8-color accent palette.
 - **notification.c** — Ring buffer store (max 8 notifications). Tracks by 48-char ID + sequence counter.
 - **rgb_led.c** — WS2812B driver for onboard RGB LED (GPIO8). Non-blocking flash with linear fade-out via esp_timer.
@@ -159,24 +162,25 @@ The simulator binary ships inside the Menu Bar `.app` bundle for hardware-free u
 
 Key simulator-specific files:
 - **sim_ble_parse.c/h** — Shared JSON parser for TCP bridge (mirrors firmware's `parse_notification_json`). Returns 0 (BLE event), 1 (set_time), 2 (config), 3 (window command), or -1 (error).
-- **sim_socket.c/h** — TCP listener with mutex-guarded ring buffers for BLE events and window commands (background pthread, main thread drains). Supports outbound events via `sim_socket_send_event()`.
+- **sim_socket.c/h** — TCP listener with mutex-guarded ring buffers for BLE events and window commands (background pthread, main thread drains). Supports outbound events via `sim_socket_send_event()`. Handles `query_state` action returning JSON with slot state, animations, and positions.
 
 ### Host (`host/`)
 
 - **clawd-tank-notify** — Standalone hook handler (installed to `~/.clawd-tank/clawd-tank-notify` by the menu bar app). Reads Claude Code hook stdin, converts to daemon message, forwards via Unix socket. Uses only stdlib — no external imports.
-- **clawd_tank_daemon/** — Async Python daemon (asyncio). Multi-transport architecture with `TransportClient` Protocol. Supports BLE (`ClawdBleClient`) and TCP simulator (`SimClient`) transports with independent per-transport queues and sender tasks. Dynamic transport add/remove at runtime. Session state tracking with priority-based display state computation, staleness eviction, and subagent lifecycle tracking. `SimProcessManager` manages the simulator subprocess lifecycle (spawn, window commands, stdout/stderr logging through Python logger, SIGKILL on quit). `session_store.py` handles atomic save/load of session state to `~/.clawd-tank/sessions.json` for restart recovery.
+- **clawd_tank_daemon/** — Async Python daemon (asyncio). Multi-transport architecture with `TransportClient` Protocol. Supports BLE (`ClawdBleClient`) and TCP simulator (`SimClient`) transports with independent per-transport queues and sender tasks. Dynamic transport add/remove at runtime. Per-transport protocol versioning (v1 `set_status` for legacy, v2 `set_sessions` with per-session animations and UUIDs). BLE client reads the protocol version GATT characteristic on connect. Session state tracking with priority-based display state computation, staleness eviction, subagent lifecycle tracking, and per-session sweeping for v2 transports. `SimProcessManager` manages the simulator subprocess lifecycle (spawn, window commands, stdout/stderr logging through Python logger, SIGKILL on quit). `session_store.py` handles atomic save/load of session state to `~/.clawd-tank/sessions.json` for restart recovery.
 - **clawd_tank_menubar/** — macOS status bar app (rumps). Transport submenus (BLE/Simulator) with independent enable/disable, connection status with colored emoji indicators, simulator window controls (show/hide, always-on-top), brightness/session timeout config, Claude Code hook installer (`hooks.py`), version display, log file output (`~/Library/Logs/ClawdTank/clawd-tank.log`). Preferences persisted to `~/.clawd-tank/preferences.json` with read-modify-write pattern. Auto-updates hooks on startup when the installed version is outdated (no manual "Install Hooks" click required). Periodic health check timer detects daemon thread crashes and shows a disconnected icon; daemon thread exceptions are caught and logged instead of dying silently.
 
 ### Session State Model
 
-The daemon tracks per-session state and computes a single display state sent to the device:
+The daemon tracks per-session state and computes display state sent to the device. Protocol v2 transports receive per-session animations; v1 transports receive a single aggregated animation.
 
 - **Per-session states**: `registered` → `thinking` → `working` → `idle` → `confused`
-- **Display states** (priority order): `working_N` (1-3 sessions) > `thinking` > `confused` > `idle` > `sleeping`
-- **Intensity tiers**: 1 session working = Typing, 2 = Juggling, 3+ = Building
-- **Special events**: `PreCompact` → oneshot sweeping animation, `Notification` (idle_prompt) → confused
+- **Protocol v2 (multi-session)**: Each session gets its own animation and stable UUID. Up to `MAX_VISIBLE=4` sessions shown simultaneously with individual Clawd sprites. Per-session sweeping sends sweep animation only to the compacting session.
+- **Protocol v1 (legacy)**: Display states (priority order): `working_N` (1-3 sessions) > `thinking` > `confused` > `idle` > `sleeping`. Intensity tiers: 1 session = Typing, 2 = Juggling, 3+ = Building.
+- **Session transitions**: New sessions walk in from offscreen. Exiting sessions play a burrowing animation, then remaining sessions reposition with walk animations. Extra sessions beyond `MAX_VISIBLE` are shown as a "+N" overflow badge.
+- **Special events**: `PreCompact` → per-session sweeping (v2) or global oneshot sweep (v1), `Notification` (idle_prompt) → confused
 - **Staleness eviction**: Sessions with no events within the configurable timeout (default 10min) are evicted. No sessions = sleeping.
-- **Subagent tracking**: `SubagentStart`/`SubagentStop` hooks track active `agent_id`s per session. Sessions with active subagents are never evicted and count as "working" in display state.
+- **Subagent tracking**: `SubagentStart`/`SubagentStop` hooks track active `agent_id`s per session. Sessions with active subagents are never evicted and count as "working" in display state. HUD overlay shows mini-crab icon with subagent count.
 - **Session persistence**: Session state is saved atomically to `~/.clawd-tank/sessions.json` on structural state changes. Daemon loads saved state on startup with immediate stale session eviction, so restarting the menu bar app preserves the correct display state for running Claude Code sessions.
 
 ## Key Constraints

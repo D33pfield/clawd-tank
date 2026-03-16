@@ -10,6 +10,7 @@ logger = logging.getLogger("clawd-tank.ble")
 SERVICE_UUID = "aecbefd9-98a2-4773-9fed-bb2166daa49a"
 NOTIFICATION_CHR_UUID = "71ffb137-8b7a-47c9-9a7a-4b1b16662d9a"
 CONFIG_CHR_UUID = "e9f6e626-5fca-4201-b80c-4d2b51c40f51"
+VERSION_CHR_UUID = "b6dc9a5b-5041-4b32-9f8d-34321df8637c"
 SCAN_INTERVAL_SECS = 5
 
 
@@ -111,6 +112,14 @@ class ClawdBleClient:
             except Exception as e:
                 logger.error("Config read failed: %s", e)
                 return {}
+
+    async def read_version(self) -> int:
+        """Read protocol version from firmware. Returns 1 if characteristic absent."""
+        try:
+            data = await self._client.read_gatt_char(VERSION_CHR_UUID)
+            return int(data.decode("utf-8").strip())
+        except Exception:
+            return 1  # v1 firmware or characteristic not found
 
     async def write_config(self, payload: str) -> bool:
         """Write a partial config JSON to the config characteristic.

@@ -5,6 +5,7 @@
 #include "sim_socket.h"
 #include "sim_timer.h"
 #include "ui_manager.h"
+#include "scene.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -168,6 +169,18 @@ static void run_headless(void)
         if (opt_listen_port > 0) {
             sim_socket_process();
             sim_socket_process_window_cmds(handle_window_cmd);
+            if (sim_socket_has_pending_query()) {
+                scene_t *scene = ui_manager_get_scene();
+                char *state_json = scene_get_state_json(scene);
+                if (state_json) {
+                    char *response = malloc(strlen(state_json) + 32);
+                    snprintf(response, strlen(state_json) + 32,
+                             "{\"event\":\"state\",%s", state_json + 1);
+                    sim_socket_send_event(response);
+                    free(response);
+                    free(state_json);
+                }
+            }
         }
 
         /* Advance simulated timers (drives RGB LED animation) */
@@ -306,6 +319,18 @@ static void run_interactive(void)
         if (opt_listen_port > 0) {
             sim_socket_process();
             sim_socket_process_window_cmds(handle_window_cmd);
+            if (sim_socket_has_pending_query()) {
+                scene_t *scene = ui_manager_get_scene();
+                char *state_json = scene_get_state_json(scene);
+                if (state_json) {
+                    char *response = malloc(strlen(state_json) + 32);
+                    snprintf(response, strlen(state_json) + 32,
+                             "{\"event\":\"state\",%s", state_json + 1);
+                    sim_socket_send_event(response);
+                    free(response);
+                    free(state_json);
+                }
+            }
         }
 
         /* Advance simulated timers (drives RGB LED animation) */

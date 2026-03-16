@@ -10,6 +10,7 @@
 #include "cJSON.h"
 #include "config_store.h"
 #include "display.h"
+#include "scene.h"
 #include "ui_manager.h"
 #include <string.h>
 #include <stdlib.h>
@@ -37,6 +38,12 @@ static const ble_uuid128_t config_chr_uuid = BLE_UUID128_INIT(
     0x01, 0x42, 0xca, 0x5f, 0x26, 0xe6, 0xf6, 0xe9
 );
 
+// Version Characteristic: B6DC9A5B-5041-4B32-9F8D-34321DF8637C
+static const ble_uuid128_t version_chr_uuid = BLE_UUID128_INIT(
+    0x7c, 0x63, 0xf8, 0x1d, 0x32, 0x34, 0x8d, 0x9f,
+    0x32, 0x4b, 0x41, 0x50, 0x5b, 0x9a, 0xdc, 0xb6
+);
+
 // Forward declarations
 static int ble_gap_event_cb(struct ble_gap_event *event, void *arg);
 static void start_advertising(void);
@@ -45,6 +52,16 @@ static void safe_strncpy(char *dst, const char *src, size_t n) {
     if (!src) { dst[0] = '\0'; return; }
     strncpy(dst, src, n - 1);
     dst[n - 1] = '\0';
+}
+
+static int parse_anim_name(const char *str) {
+    if (strcmp(str, "idle") == 0)     return CLAWD_ANIM_IDLE;
+    if (strcmp(str, "typing") == 0)   return CLAWD_ANIM_TYPING;
+    if (strcmp(str, "thinking") == 0) return CLAWD_ANIM_THINKING;
+    if (strcmp(str, "building") == 0) return CLAWD_ANIM_BUILDING;
+    if (strcmp(str, "confused") == 0) return CLAWD_ANIM_CONFUSED;
+    if (strcmp(str, "sweeping") == 0) return CLAWD_ANIM_SWEEPING;
+    return -1;
 }
 
 static int parse_display_status(const char *str) {
@@ -131,6 +148,35 @@ static void parse_notification_json(const char *buf, uint16_t len) {
         }
         evt.type = BLE_EVT_SET_STATUS;
         evt.status = (uint8_t)s;
+    } else if (strcmp(action->valuestring, "set_sessions") == 0) {
+        cJSON *anims = cJSON_GetObjectItem(json, "anims");
+        cJSON *ids = cJSON_GetObjectItem(json, "ids");
+        cJSON *subagents = cJSON_GetObjectItem(json, "subagents");
+        if (!anims || !cJSON_IsArray(anims) || !ids || !cJSON_IsArray(ids)) {
+            cJSON_Delete(json);
+            return;
+        }
+        evt.type = BLE_EVT_SET_SESSIONS;
+        evt.session_anim_count = 0;
+        evt.subagent_count = subagents && cJSON_IsNumber(subagents) ? (uint8_t)subagents->valueint : 0;
+        cJSON *overflow = cJSON_GetObjectItem(json, "overflow");
+        evt.session_overflow = overflow && cJSON_IsNumber(overflow) ? (uint8_t)overflow->valueint : 0;
+
+        int anim_size = cJSON_GetArraySize(anims);
+        int id_size = cJSON_GetArraySize(ids);
+        int count = anim_size < id_size ? anim_size : id_size;
+        if (count > MAX_VISIBLE_SESSIONS) count = MAX_VISIBLE_SESSIONS;
+
+        for (int i = 0; i < count; i++) {
+            cJSON *a = cJSON_GetArrayItem(anims, i);
+            cJSON *id = cJSON_GetArrayItem(ids, i);
+            if (!a || !cJSON_IsString(a) || !id || !cJSON_IsNumber(id)) continue;
+            int anim = parse_anim_name(a->valuestring);
+            if (anim < 0) continue;
+            evt.session_anims[evt.session_anim_count] = (uint8_t)anim;
+            evt.session_ids[evt.session_anim_count] = (uint16_t)id->valueint;
+            evt.session_anim_count++;
+        }
     } else {
         ESP_LOGW(TAG, "Unknown action '%s', ignoring", action->valuestring);
         cJSON_Delete(json);
@@ -222,6 +268,16 @@ static int config_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     return 0;
 }
 
+static int version_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+                              struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        const char *ver = "2";
+        int rc = os_mbuf_append(ctxt->om, ver, strlen(ver));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 static const struct ble_gatt_svc_def gatt_svcs[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -236,6 +292,11 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
                 .uuid = &config_chr_uuid.u,
                 .access_cb = config_access_cb,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+            },
+            {
+                .uuid = &version_chr_uuid.u,
+                .access_cb = version_access_cb,
+                .flags = BLE_GATT_CHR_F_READ,
             },
             { 0 },
         },

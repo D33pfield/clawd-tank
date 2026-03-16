@@ -2,6 +2,7 @@
 #include "ble_service.h"
 #include "ui_manager.h"
 #include "config_store.h"
+#include "scene.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,6 +168,46 @@ void sim_events_init_inline(const char *events_str)
                 strncpy(evt.id, s_notif_ids[index], sizeof(evt.id) - 1);
             }
             add_event(current_time, &evt, "dismiss");
+        }
+        else if (strncmp(p, "sessions", 8) == 0 && (!p[8] || p[8] == ';' || isspace((unsigned char)p[8]))) {
+            p += 8;
+            /* Parse: sessions "anim_name" display_id [subagent_count]
+             * Creates a BLE_EVT_SET_SESSIONS with session_anim_count=1 */
+            char anim_str[32];
+            p = parse_quoted(p, anim_str, sizeof(anim_str));
+            p = skip_ws(p);
+            int display_id = atoi(p);
+            while (*p && *p != ';' && !isspace((unsigned char)*p)) p++;
+            /* Optional subagent count */
+            p = skip_ws(p);
+            int subagents = 0;
+            if (*p && *p != ';' && isdigit((unsigned char)*p)) {
+                subagents = atoi(p);
+                while (*p && *p != ';' && !isspace((unsigned char)*p)) p++;
+            }
+
+            /* Map animation name to enum */
+            int anim = -1;
+            if (strcmp(anim_str, "idle") == 0) anim = CLAWD_ANIM_IDLE;
+            else if (strcmp(anim_str, "typing") == 0) anim = CLAWD_ANIM_TYPING;
+            else if (strcmp(anim_str, "thinking") == 0) anim = CLAWD_ANIM_THINKING;
+            else if (strcmp(anim_str, "building") == 0) anim = CLAWD_ANIM_BUILDING;
+            else if (strcmp(anim_str, "confused") == 0) anim = CLAWD_ANIM_CONFUSED;
+            else if (strcmp(anim_str, "sleeping") == 0) anim = CLAWD_ANIM_SLEEPING;
+            else if (strcmp(anim_str, "juggling") == 0) anim = CLAWD_ANIM_JUGGLING;
+            else if (strcmp(anim_str, "sweeping") == 0) anim = CLAWD_ANIM_SWEEPING;
+
+            if (anim >= 0) {
+                ble_evt_t evt = { .type = BLE_EVT_SET_SESSIONS };
+                evt.session_anim_count = 1;
+                evt.session_anims[0] = (uint8_t)anim;
+                evt.session_ids[0] = (uint16_t)display_id;
+                evt.subagent_count = (uint8_t)subagents;
+                evt.session_overflow = 0;
+                add_event(current_time, &evt, anim_str);
+            } else {
+                fprintf(stderr, "[sim] Unknown session anim: %s\n", anim_str);
+            }
         }
         else if (strncmp(p, "wait", 4) == 0) {
             p += 4;

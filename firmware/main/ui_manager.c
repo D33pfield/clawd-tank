@@ -174,8 +174,6 @@ void ui_manager_handle_event(const ble_evt_t *evt)
     case BLE_EVT_CONNECTED:
         ESP_LOGI(TAG, "Connected");
         s_connected = true;
-        /* Happy reaction on reconnect per spec */
-        scene_set_clawd_anim(s_scene, CLAWD_ANIM_HAPPY);
         /* Transition based on notification count */
         if (notif_store_count(&s_store) > 0) {
             transition_to(UI_STATE_NOTIFICATION);
@@ -214,8 +212,6 @@ void ui_manager_handle_event(const ble_evt_t *evt)
         notif_store_dismiss(&s_store, evt->id);
 
         if (notif_store_count(&s_store) == 0) {
-            /* Last notification cleared — happy then idle */
-            scene_set_clawd_anim(s_scene, CLAWD_ANIM_HAPPY);
             transition_to(UI_STATE_FULL_IDLE);
         } else {
             notification_ui_rebuild(s_notif_ui, &s_store);
@@ -226,10 +222,33 @@ void ui_manager_handle_event(const ble_evt_t *evt)
     case BLE_EVT_NOTIF_CLEAR:
         ESP_LOGI(TAG, "Clear all");
         notif_store_clear(&s_store);
-        scene_set_clawd_anim(s_scene, CLAWD_ANIM_HAPPY);
         transition_to(UI_STATE_FULL_IDLE);
         s_last_activity_tick = lv_tick_get();
         break;
+
+    case BLE_EVT_SET_SESSIONS: {
+        ESP_LOGI(TAG, "Set sessions: %d anims (anim0=%d), %d subagents, %d overflow",
+                 evt->session_anim_count,
+                 evt->session_anim_count > 0 ? evt->session_anims[0] : -1,
+                 evt->subagent_count, evt->session_overflow);
+
+        /* Wake from sleep if needed */
+        if (s_display_status == DISPLAY_STATUS_SLEEPING) {
+            display_set_brightness(config_store_get_brightness());
+        }
+        s_display_status = DISPLAY_STATUS_IDLE;
+
+        /* Always use scene_set_sessions() — it has a single-session fast
+         * path that updates slot 0 in place (same sprite object, same
+         * Z-order, oneshot protection) so positioning is identical to the
+         * legacy scene_set_clawd_anim() path.  No shortcut needed. */
+        scene_set_sessions(s_scene,
+            evt->session_anims, evt->session_ids,
+            evt->session_anim_count, evt->subagent_count, evt->session_overflow);
+
+        s_last_activity_tick = lv_tick_get();
+        break;
+    }
 
     case BLE_EVT_SET_STATUS: {
         display_status_t new_status = (display_status_t)evt->status;
@@ -269,6 +288,11 @@ void ui_manager_get_anim_info(int *frame_count, int *frame_ms)
 int ui_manager_get_frame_idx(void)
 {
     return scene_get_frame_idx(s_scene);
+}
+
+scene_t *ui_manager_get_scene(void)
+{
+    return s_scene;
 }
 #endif
 

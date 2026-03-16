@@ -31,6 +31,10 @@ bool sim_socket_process(void);
 // Calls handler for each command. Returns true if any command was processed.
 bool sim_socket_process_window_cmds(void (*handler)(const sim_win_cmd_t *cmd));
 
+// Check and clear the pending state query flag.
+// Returns true if a query_state was received (caller should build and send the response).
+bool sim_socket_has_pending_query(void);
+
 // Send a JSON event line to the currently-connected client (if any).
 // json_line must be a null-terminated JSON string (no trailing newline needed).
 // Returns true if the line was sent successfully.
