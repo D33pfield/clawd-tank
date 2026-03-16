@@ -7,9 +7,13 @@
 - **Multi-session display** — Up to 4 concurrent Claude Code sessions rendered as individual Clawd sprites with per-session animations. Protocol v2 `set_sessions` action sends per-session animation state and stable UUIDs. Overflow badge shows "+N" when sessions exceed `MAX_VISIBLE=4`.
   ![Multi-session](assets/sim-recordings/clawd-multi-session.gif)
 - **Walk-in animation** — New sessions enter from offscreen with a walking sprite animation. Existing sessions reposition with walk animations when the layout changes.
+  ![Walk-in](assets/sim-recordings/clawd-walk-in.gif)
 - **Going-away burrowing animation** — Sessions that exit play a burrowing animation instead of a fade-out. Remaining sessions defer repositioning until the burrowing completes.
+  ![Going-away](assets/sim-recordings/clawd-going-away.gif)
 - **HUD subagent counter** — Mini-crab icon with pixel-art bitmap font shows active subagent count. Session overflow badge anchored to container right edge.
+  ![HUD subagents](assets/sim-recordings/clawd-hud-subagents.gif)
 - **Per-session sweeping** — `PreCompact` events now send a sweep animation only to the compacting session (v2), instead of a global sweep (v1 fallback preserved).
+  ![Sweeping](assets/sim-recordings/clawd-sweep.gif)
 - **Protocol version negotiation** — BLE GATT characteristic exposes protocol version (v2). Daemon reads it on connect and selects v1 `set_status` or v2 `set_sessions` payloads per-transport.
 - **`query_state` TCP action** — Debug introspection command returns JSON with all slot states, animations, and positions.
 - **`gemini_animate.py` tool** — AI-assisted SVG animation generation using Gemini API.
