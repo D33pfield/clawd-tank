@@ -474,12 +474,12 @@ scene_t *scene_create(lv_obj_t *parent)
     lv_label_set_text(s->noconn_label, "No connection");
     lv_obj_add_flag(s->noconn_label, LV_OBJ_FLAG_HIDDEN);
 
-    /* HUD canvas — for subagent counter and overflow badge */
+    /* HUD canvas — full width for subagent counter (left) and overflow badge (right) */
     s->hud_canvas = lv_canvas_create(s->container);
-    /* Canvas buffer for pixel font: 80x12 pixels @ ARGB8888 */
-    static uint8_t hud_buf[80 * 12 * 4];
-    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 80, 12, LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 4, 4);
+    /* Canvas buffer: 320x12 pixels @ ARGB8888 */
+    static uint8_t hud_buf[320 * 12 * 4];
+    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 320, 12, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 0, 4);
     lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
     s->hud_subagent_count = 0;
     s->hud_overflow = 0;
@@ -821,25 +821,24 @@ static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflo
     /* Clear canvas */
     lv_canvas_fill_bg(s->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
 
-    int x = 0;
-
     if (subagent_count > 0) {
-        /* Draw "xN" for subagent count */
+        /* Draw "xN" for subagent count at the left */
         char buf[8];
         snprintf(buf, sizeof(buf), "x%d", subagent_count);
-        pixel_font_draw(s->hud_canvas, buf, x, 1, 2, lv_color_hex(0xFFC107));
+        pixel_font_draw(s->hud_canvas, buf, 4, 1, 2, lv_color_hex(0xFFC107));
     }
 
     if (s->narrow && total_sessions > 1) {
-        /* Narrow mode: show total session count */
+        /* Narrow mode: show total session count at the right */
         char buf[8];
         snprintf(buf, sizeof(buf), "x%d", total_sessions);
-        pixel_font_draw(s->hud_canvas, buf, 50, 1, 2, lv_color_hex(0x8BC6FC));
+        /* 2 chars × (5+1) × scale2 = 24px, right-align at 320-24-4 = 292 */
+        pixel_font_draw(s->hud_canvas, buf, 292, 1, 2, lv_color_hex(0x8BC6FC));
     } else if (!s->narrow && overflow > 0) {
-        /* Full mode: show overflow count */
+        /* Full mode: show overflow count at the far right */
         char buf[8];
         snprintf(buf, sizeof(buf), "+%d", overflow);
-        pixel_font_draw(s->hud_canvas, buf, 50, 1, 2, lv_color_hex(0x8BC6FC));
+        pixel_font_draw(s->hud_canvas, buf, 292, 1, 2, lv_color_hex(0x8BC6FC));
     }
 
     lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
