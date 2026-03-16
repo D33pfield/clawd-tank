@@ -5,6 +5,7 @@
 #include "sim_socket.h"
 #include "sim_timer.h"
 #include "ui_manager.h"
+#include "scene.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -168,6 +169,21 @@ static void run_headless(void)
         if (opt_listen_port > 0) {
             sim_socket_process();
             sim_socket_process_window_cmds(handle_window_cmd);
+            if (sim_socket_has_pending_query()) {
+                scene_t *scene = ui_manager_get_scene();
+                char *state_json = scene_get_state_json(scene);
+                if (state_json) {
+                    size_t len = strlen(state_json) + 32;
+                    char *response = malloc(len);
+                    if (response) {
+                        snprintf(response, len,
+                                 "{\"event\":\"state\",%s", state_json + 1);
+                        sim_socket_send_event(response);
+                        free(response);
+                    }
+                    free(state_json);
+                }
+            }
         }
 
         /* Advance simulated timers (drives RGB LED animation) */
@@ -306,6 +322,21 @@ static void run_interactive(void)
         if (opt_listen_port > 0) {
             sim_socket_process();
             sim_socket_process_window_cmds(handle_window_cmd);
+            if (sim_socket_has_pending_query()) {
+                scene_t *scene = ui_manager_get_scene();
+                char *state_json = scene_get_state_json(scene);
+                if (state_json) {
+                    size_t len = strlen(state_json) + 32;
+                    char *response = malloc(len);
+                    if (response) {
+                        snprintf(response, len,
+                                 "{\"event\":\"state\",%s", state_json + 1);
+                        sim_socket_send_event(response);
+                        free(response);
+                    }
+                    free(state_json);
+                }
+            }
         }
 
         /* Advance simulated timers (drives RGB LED animation) */
@@ -338,6 +369,10 @@ static void handle_sdl_events(void)
 {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_WINDOWEVENT &&
+            e.window.event == SDL_WINDOWEVENT_RESIZED) {
+            sim_display_enforce_aspect_ratio();
+        }
         if (e.type == SDL_QUIT) {
             if (opt_listen_port > 0) {
                 sim_display_hide_window();

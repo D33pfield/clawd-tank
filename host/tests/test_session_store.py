@@ -15,7 +15,7 @@ def test_round_trip_basic(tmp_path):
         "s2": {"state": "idle", "last_event": 1234567891.0},
     }
     save_sessions(states, path)
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert loaded == states
 
 
@@ -29,7 +29,7 @@ def test_round_trip_with_subagents(tmp_path):
         },
     }
     save_sessions(states, path)
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert loaded["s1"]["subagents"] == {"a1", "a2"}
     assert isinstance(loaded["s1"]["subagents"], set)
 
@@ -40,34 +40,36 @@ def test_round_trip_empty_subagents(tmp_path):
         "s1": {"state": "idle", "last_event": 1234567890.0, "subagents": set()},
     }
     save_sessions(states, path)
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert loaded["s1"]["subagents"] == set()
 
 
 def test_round_trip_empty_dict(tmp_path):
     path = tmp_path / "sessions.json"
     save_sessions({}, path)
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert loaded == {}
 
 
 def test_load_missing_file(tmp_path):
     path = tmp_path / "nonexistent.json"
-    loaded = load_sessions(path)
+    loaded, order, next_id = load_sessions(path)
     assert loaded == {}
+    assert order == []
+    assert next_id == 1
 
 
 def test_load_corrupt_file(tmp_path):
     path = tmp_path / "sessions.json"
     path.write_text("not valid json {{{")
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert loaded == {}
 
 
 def test_load_empty_file(tmp_path):
     path = tmp_path / "sessions.json"
     path.write_text("")
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert loaded == {}
 
 
@@ -75,12 +77,14 @@ def test_load_invalid_entries_skipped(tmp_path):
     """Entries missing required keys are dropped."""
     path = tmp_path / "sessions.json"
     path.write_text(json.dumps({
-        "good": {"state": "idle", "last_event": 1.0},
-        "bad_no_state": {"last_event": 1.0},
-        "bad_no_event": {"state": "idle"},
-        "bad_garbage": {"foo": "bar"},
+        "sessions": {
+            "good": {"state": "idle", "last_event": 1.0},
+            "bad_no_state": {"last_event": 1.0},
+            "bad_no_event": {"state": "idle"},
+            "bad_garbage": {"foo": "bar"},
+        },
     }))
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert "good" in loaded
     assert "bad_no_state" not in loaded
     assert "bad_no_event" not in loaded
@@ -91,7 +95,7 @@ def test_save_creates_parent_dirs(tmp_path):
     path = tmp_path / "nested" / "dir" / "sessions.json"
     save_sessions({"s1": {"state": "idle", "last_event": 1.0}}, path)
     assert path.exists()
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert "s1" in loaded
 
 
@@ -99,7 +103,7 @@ def test_save_overwrites_existing(tmp_path):
     path = tmp_path / "sessions.json"
     save_sessions({"s1": {"state": "idle", "last_event": 1.0}}, path)
     save_sessions({"s2": {"state": "working", "last_event": 2.0}}, path)
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert "s1" not in loaded
     assert "s2" in loaded
 
@@ -108,12 +112,14 @@ def test_load_non_dict_values_skipped(tmp_path):
     """Entry values that are not dicts are dropped."""
     path = tmp_path / "sessions.json"
     path.write_text(json.dumps({
-        "good": {"state": "idle", "last_event": 1.0},
-        "number": 42,
-        "string": "garbage",
-        "list": [1, 2, 3],
+        "sessions": {
+            "good": {"state": "idle", "last_event": 1.0},
+            "number": 42,
+            "string": "garbage",
+            "list": [1, 2, 3],
+        },
     }))
-    loaded = load_sessions(path)
+    loaded, _, _ = load_sessions(path)
     assert "good" in loaded
     assert "number" not in loaded
     assert "string" not in loaded
@@ -128,3 +134,38 @@ def test_save_is_atomic(tmp_path):
     files = list(tmp_path.iterdir())
     assert len(files) == 1
     assert files[0].name == "sessions.json"
+
+
+def test_load_old_format_backwards_compat(tmp_path):
+    """Old format (flat dict, no envelope) synthesizes order from session keys."""
+    path = tmp_path / "sessions.json"
+    path.write_text(json.dumps({
+        "s1": {"state": "working", "last_event": 1234567890.0},
+    }))
+    loaded, order, next_id = load_sessions(path)
+    assert "s1" in loaded
+    assert loaded["s1"]["state"] == "working"
+    assert order == [("s1", 1)]
+    assert next_id == 2
+
+
+# --- Session order persistence ---
+
+
+def test_session_order_round_trip(tmp_path):
+    path = tmp_path / "sessions.json"
+    states = {"aaa": {"state": "working", "last_event": 100.0}}
+    order = [("aaa", 1), ("bbb", 2)]
+    save_sessions(states, path, order=order, next_id=3)
+    loaded_states, loaded_order, loaded_next_id = load_sessions(path)
+    assert loaded_order == [("aaa", 1), ("bbb", 2)]
+    assert loaded_next_id == 3
+
+
+def test_session_order_default_empty(tmp_path):
+    """When saved without order, loading synthesizes order from valid sessions."""
+    path = tmp_path / "sessions.json"
+    save_sessions({"s1": {"state": "idle", "last_event": 1.0}}, path)
+    _, order, next_id = load_sessions(path)
+    assert order == [("s1", 1)]
+    assert next_id == 2

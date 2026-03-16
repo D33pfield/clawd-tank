@@ -1,5 +1,51 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.3.0] - 2026-03-16
+
+### Added
+
+- **Multi-session display** — Up to 4 concurrent Claude Code sessions rendered as individual Clawd sprites with per-session animations. Protocol v2 `set_sessions` action sends per-session animation state and stable UUIDs. Overflow badge shows "+N" when sessions exceed `MAX_VISIBLE=4`.
+  ![Multi-session](assets/sim-recordings/clawd-multi-session.gif)
+- **Walk-in animation** — New sessions enter from offscreen with a walking sprite animation. Existing sessions reposition with walk animations when the layout changes.
+  ![Walk-in](assets/sim-recordings/clawd-walk-in.gif)
+- **Going-away burrowing animation** — Sessions that exit play a burrowing animation instead of a fade-out. Remaining sessions defer repositioning until the burrowing completes.
+  ![Going-away](assets/sim-recordings/clawd-going-away.gif)
+- **HUD subagent counter** — Mini-crab icon with pixel-art bitmap font shows active subagent count. Session overflow badge anchored to container right edge.
+  ![HUD subagents](assets/sim-recordings/clawd-hud-subagents.gif)
+- **Per-session sweeping** — `PreCompact` events now send a sweep animation only to the compacting session (v2), instead of a global sweep (v1 fallback preserved).
+  ![Sweeping](assets/sim-recordings/clawd-sweep.gif)
+- **Protocol version negotiation** — BLE GATT characteristic exposes protocol version (v2). Daemon reads it on connect and selects v1 `set_status` or v2 `set_sessions` payloads per-transport.
+- **`query_state` TCP action** — Debug introspection command returns JSON with all slot states, animations, and positions.
+- **`gemini_animate.py` tool** — AI-assisted SVG animation generation using Gemini API.
+- **New sprite assets** — Going-away burrowing sprite, walking sprite, mini-clawd HUD sprite, with SVG sources.
+- **Auto-crop sprite pipeline** — `tools/crop_sprites.py` crops all sprite headers in-place with symmetric horizontal padding (keeps Clawd centered) and free vertical cropping. Reduces frame buffer memory by 69% (1194 KB → 368 KB across all sprites). `tools/analyze_sprite_bounds.py` for bounding box analysis.
+- **RGB565A8 pixel format on firmware** — Frame buffers use 3 bytes/pixel (native-with-alpha for 16-bit display) instead of 4 bytes/pixel ARGB8888, saving 25% memory per buffer. New `rle_decode_rgb565a8` decoder in `rle_sprite.h`.
+- **Heap diagnostics** — Free heap breakdown (internal SRAM + PSRAM) logged at firmware boot.
+- **OOM logging** — Frame buffer allocation failures logged with `ESP_LOGW` instead of silent skip.
+- **Custom app icon** — New macOS app icon with Clawd pixel-art crab design, replacing the default py2app icon. SVG source and full iconset included in `assets/`.
+
+### Changed
+
+- **Scene slot architecture** — `MAX_VISIBLE=4` on both platforms. `MAX_SLOTS=6` on firmware (no PSRAM), `MAX_SLOTS=8` on simulator.
+- **Sprite dimensions** — All sprites auto-cropped to tight bounding boxes. Largest session sprite is confused at 152x113 (was 180x180). Idle is 72x51, walking is 60x40. y_offsets adjusted to preserve on-screen positioning.
+- **`build.sh` always rebuilds** — No stale check; static simulator is always rebuilt to avoid version drift.
+
+### Fixed
+
+- **Firmware build errors** — Fixed `pixel_font.c` missing from firmware CMakeLists (was in simulator only), format specifier mismatches (`%d` → `PRId32`), unused variable/function warnings, and `snprintf` truncation warning.
+- **Firmware memory constraints** — ESP32-C6 has no PSRAM (corrected from CLAUDE.md which incorrectly stated 4MB). Removed bogus PSRAM settings from `sdkconfig.defaults`. Sprite cropping + RGB565A8 format ensures multi-session display fits in ~200 KB free internal SRAM.
+- **Simulator window resizing** — Replaced integer-step scaling (which left large black dead zones between scale jumps) with continuous float scaling that fills the window smoothly at any size.
+- **Aspect ratio enforcement** — Window now locks to the native display aspect ratio (328:180) during resize, eliminating black letterbox bars. Drag direction is detected (horizontal, vertical, or corner) to adjust the correct axis.
+- **LED border rendering** — Border now renders uniformly around the content by filling the entire window with the LED color and insetting the framebuffer, instead of computing separate border and content rects with rounding gaps.
+- **Narrow mode walk suppression** — Walk animations correctly cancelled when entering narrow mode (notification cards visible).
+- **Deferred reposition detection** — Position change detection fixed for post-burrowing repositioning.
+- **HUD canvas cleanup** — HUD canvas properly cleared when hiding subagent counter.
+- **BLE version reading** — `read_version` return type validated for mock compatibility in tests.
+- **Bounds check for empty sessions** — `set_sessions` with empty session list handled safely.
+- **BLE reconnection state sync** — Daemon now proactively reconnects when the BLE device drops and immediately syncs time, re-reads protocol version, and replays all active notifications and session state. Previously this only happened when a new hook call arrived.
+
 ## [1.2.1] - 2026-03-14
 
 ### Added

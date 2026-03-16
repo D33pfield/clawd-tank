@@ -1,6 +1,6 @@
 # Clawd Notification Display — TODO
 
-## Status (v1.2.1)
+## Status (v1.3.0)
 
 Firmware builds, flashes, and runs on the Waveshare ESP32-C6-LCD-1.47 board.
 BLE advertising works, notifications can be sent and dismissed via BLE GATT writes.
@@ -11,13 +11,16 @@ macOS menu bar app provides daemon control, device configuration UI, and simulat
 Daemon supports multi-transport (BLE + TCP simulator) with dynamic add/remove at runtime.
 Simulator supports TCP listener (`--listen`) for daemon-driven operation without hardware.
 Session-aware working animations driven by Claude Code hooks with intensity tiers.
-11 animated sprites integrated into scene.c (5 original + 6 working animations).
+14 animated sprites integrated into scene.c, auto-cropped to tight bounding boxes.
+Multi-session display with up to 4 concurrent Clawd sprites (v2 protocol).
 Session state tracking in daemon with priority-based display state computation.
 Staleness eviction replaces timer-based sleep — sleep is now session-driven.
 Subagent lifecycle tracking prevents sleeping during long-running agent tasks.
 Session state persisted to disk — restarting the app preserves display state.
 Build script (`host/build.sh`) automates simulator + py2app + bundle.
 Auto-update hooks, daemon health monitoring, orphan sim cleanup, launchd auto-migration.
+Firmware uses RGB565A8 pixel format + cropped sprites to fit multi-session in ~200 KB SRAM (no PSRAM).
+Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
 
 ---
 
@@ -99,6 +102,30 @@ Auto-update hooks, daemon health monitoring, orphan sim cleanup, launchd auto-mi
 - [x] **Daemon thread crash logging** — Daemon thread exceptions are caught and logged instead of dying silently. Periodic health check timer detects dead daemon and shows disconnected icon.
 - [x] **Orphaned sim process cleanup** — On startup, orphaned simulator processes on the listen port are identified by name and killed instead of being connected to.
 - [x] **Display state sync on replay** — `_last_display_state` is updated after transport replay to prevent duplicate broadcasts.
+- [x] **Proactive BLE reconnection** — Transport sender loop detects dropped connections on each 1s timeout and immediately reconnects with full state sync (time, protocol version, notifications, sessions) instead of waiting for the next hook message.
+
+## Multi-Session Display (v1.3.0) — Complete
+
+- [x] **Multi-session display** — Up to 4 concurrent Clawd sprites with per-session animations. Protocol v2 `set_sessions` action with stable UUIDs. Overflow badge shows "+N" beyond `MAX_VISIBLE=4`.
+- [x] **Walk-in animation** — New sessions enter from offscreen with a walking sprite. Existing sessions reposition with walk animations on layout change.
+- [x] **Going-away burrowing animation** — Exiting sessions play a burrowing animation. Remaining sessions defer repositioning until burrowing completes.
+- [x] **HUD subagent counter** — 2x-scaled mini-crab icon with pixel-art bitmap font shows active subagent count. Overflow badge anchored to right edge.
+- [x] **Per-session sweeping** — `PreCompact` sends sweep animation only to the compacting session (v2), global sweep preserved for v1 fallback.
+- [x] **Protocol version negotiation** — BLE GATT characteristic exposes protocol version (v2). Daemon reads on connect, selects v1 `set_status` or v2 `set_sessions` per-transport.
+- [x] **`query_state` TCP action** — Debug introspection returning JSON with slot states, animations, and positions.
+- [x] **Simulator window improvements** — Continuous float scaling, aspect ratio enforcement (328:180), uniform LED border rendering, borderless/resizable window with integer pixel scaling.
+- [x] **Custom app icon** — macOS app icon with Clawd pixel-art crab design. SVG source and full iconset in `assets/`.
+
+## Sprite Auto-Crop & Firmware Memory Optimization (v1.3.0) — Complete
+
+- [x] **Auto-crop sprite pipeline** — `tools/crop_sprites.py` reads existing C headers, decodes all frames, finds tight bounding box, applies symmetric horizontal + free vertical crop, re-encodes RLE, writes headers in-place. `tools/analyze_sprite_bounds.py` for analysis.
+- [x] **All 14 sprites cropped** — Frame buffer savings: 1194 KB → 368 KB (69%). Largest session sprite: confused 152x113 (50 KB). Idle: 72x51 (11 KB). Walking: 60x40 (7 KB).
+- [x] **RGB565A8 firmware pixel format** — Frame buffers use 3 bytes/pixel (LVGL native-with-alpha for 16-bit display) instead of 4 bytes/pixel ARGB8888. New `rle_decode_rgb565a8` decoder.
+- [x] **Firmware slot limits** — `MAX_VISIBLE=4`, `MAX_SLOTS=6` on firmware (no PSRAM). Simulator retains `MAX_SLOTS=8`.
+- [x] **y_offset adjustments** — All `anim_defs` y_offset values recomputed: `new = old - bottom_rows_removed`.
+- [x] **Firmware build fixes** — `pixel_font.c` added to CMakeLists, format specifier warnings fixed, unused code suppressed.
+- [x] **Heap diagnostics** — Free heap logged at boot. OOM logging in `ensure_frame_buf`.
+- [x] **PSRAM correction** — ESP32-C6FH8 has no PSRAM. Removed bogus settings from `sdkconfig.defaults`, corrected CLAUDE.md.
 
 ## Future Considerations (Out of Scope)
 

@@ -11,19 +11,33 @@ logger = logging.getLogger("clawd-tank")
 SESSIONS_PATH = Path.home() / ".clawd-tank" / "sessions.json"
 
 
-def save_sessions(sessions: dict[str, dict], path: Path = SESSIONS_PATH) -> None:
-    """Save session states to JSON atomically. Sets are converted to sorted lists."""
+def save_sessions(
+    sessions: dict[str, dict],
+    path: Path = SESSIONS_PATH,
+    *,
+    order: list[tuple[str, int]] | None = None,
+    next_id: int | None = None,
+) -> None:
+    """Save session states to JSON atomically. Sets are converted to sorted lists.
+
+    Optional order and next_id persist session arrival order with stable display IDs.
+    """
     serializable = {}
     for sid, state in sessions.items():
         entry = {**state}
         if "subagents" in entry:
             entry["subagents"] = sorted(entry["subagents"])
         serializable[sid] = entry
+    envelope: dict = {"sessions": serializable}
+    if order is not None:
+        envelope["session_order"] = [[sid, did] for sid, did in order]
+    if next_id is not None:
+        envelope["next_display_id"] = next_id
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
         with os.fdopen(fd, "w") as f:
-            json.dump(serializable, f)
+            json.dump(envelope, f)
         os.replace(tmp_path, str(path))
     except OSError:
         logger.warning("Failed to save session state to %s", path)
@@ -33,17 +47,30 @@ def save_sessions(sessions: dict[str, dict], path: Path = SESSIONS_PATH) -> None
             pass
 
 
-def load_sessions(path: Path = SESSIONS_PATH) -> dict[str, dict]:
-    """Load session states from JSON. Returns empty dict on any error.
+def load_sessions(path: Path = SESSIONS_PATH) -> tuple[dict[str, dict], list[tuple[str, int]], int]:
+    """Load session states from JSON. Returns (states, order, next_display_id).
 
-    Entries missing required keys (state, last_event) are silently dropped.
+    Returns empty defaults on any error. Entries missing required keys are dropped.
+    Handles both old format (flat dict of sessions) and new envelope format.
     """
     try:
         data = json.loads(path.read_text())
         if not isinstance(data, dict):
-            return {}
+            return {}, [], 1
+
+        # Detect format: new envelope has "sessions" key, old format has session IDs directly
+        if "sessions" in data and isinstance(data["sessions"], dict):
+            raw_sessions = data["sessions"]
+            raw_order = data.get("session_order", [])
+            next_id = data.get("next_display_id", 1)
+        else:
+            # Old format: flat dict of session_id → state
+            raw_sessions = data
+            raw_order = []
+            next_id = 1
+
         valid = {}
-        for sid, state in data.items():
+        for sid, state in raw_sessions.items():
             if not isinstance(state, dict):
                 continue
             if "state" not in state or "last_event" not in state:
@@ -56,6 +83,24 @@ def load_sessions(path: Path = SESSIONS_PATH) -> dict[str, dict]:
                 else:
                     state["subagents"] = set(state["subagents"])
             valid[sid] = state
-        return valid
+
+        # Parse session_order
+        order: list[tuple[str, int]] = []
+        if isinstance(raw_order, list):
+            for entry in raw_order:
+                if isinstance(entry, list) and len(entry) == 2:
+                    sid, did = entry
+                    if isinstance(sid, str) and isinstance(did, int):
+                        order.append((sid, did))
+
+        if not isinstance(next_id, int) or next_id < 1:
+            next_id = 1
+
+        # Synthesize order from session keys when missing (old format upgrade)
+        if not order and valid:
+            order = [(sid, i + 1) for i, sid in enumerate(valid)]
+            next_id = len(valid) + 1
+
+        return valid, order, next_id
     except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
-        return {}
+        return {}, [], 1

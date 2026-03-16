@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
 from .ble_client import ClawdBleClient
-from .protocol import daemon_message_to_ble_payload
+from .protocol import daemon_message_to_ble_payload, display_state_to_ble_payload, display_state_to_v1_payload
 from .sim_client import SimClient, SIM_DEFAULT_PORT
 from .socket_server import SocketServer
 from .transport import TransportClient
@@ -126,8 +126,12 @@ class ClawdDaemon:
         self._observer = observer
         self._headless = headless
         self._sessions_path = sessions_path if sessions_path is not None else session_store.SESSIONS_PATH
-        self._session_states: dict[str, dict] = load_sessions(self._sessions_path)
-        self._last_display_state: str = "sleeping"
+        loaded_states, loaded_order, loaded_next_id = load_sessions(self._sessions_path)
+        self._session_states: dict[str, dict] = loaded_states
+        self._session_order: list[tuple[str, int]] = loaded_order
+        self._next_display_id: int = loaded_next_id
+        self._last_display_state: dict = {"status": "sleeping"}
+        self._transport_versions: dict[str, int] = {}  # transport_name → protocol version
         self._session_staleness_timeout: float = 600.0
         self._evict_stale_sessions()
 
@@ -148,14 +152,32 @@ class ClawdDaemon:
 
         # --- Handle compact: send sweeping oneshot ---
         if event == "compact":
-            sweeping_payload = json.dumps({"action": "set_status", "status": "sweeping"})
-            for transport in self._transports.values():
-                if transport.is_connected:
-                    await transport.write_notification(sweeping_payload)
             computed = self._compute_display_state()
-            fallback_payload = json.dumps({"action": "set_status", "status": computed})
-            for transport in self._transports.values():
-                if transport.is_connected:
+            for name, transport in self._transports.items():
+                if not transport.is_connected:
+                    continue
+                version = self._transport_versions.get(name, 1)
+                if version >= 2 and session_id:
+                    # V2: send set_sessions with the compacting session's slot as "sweeping"
+                    sweeping_state = self._compute_display_state()
+                    if "anims" in sweeping_state:
+                        for sid, did in self._session_order:
+                            if sid == session_id:
+                                idx = next(
+                                    (i for i, d in enumerate(sweeping_state["ids"]) if d == did),
+                                    None,
+                                )
+                                if idx is not None:
+                                    sweeping_state["anims"][idx] = "sweeping"
+                                break
+                    payload = display_state_to_ble_payload(sweeping_state)
+                    await transport.write_notification(payload)
+                    # No second fallback for v2 — firmware handles sweeping as oneshot
+                else:
+                    # V1: send sweeping oneshot then restore display state
+                    sweeping_payload = json.dumps({"action": "set_status", "status": "sweeping"})
+                    await transport.write_notification(sweeping_payload)
+                    fallback_payload = display_state_to_v1_payload(computed)
                     await transport.write_notification(fallback_payload)
             self._last_display_state = computed
 
@@ -171,21 +193,45 @@ class ClawdDaemon:
         if changed:
             self._persist_sessions()
 
-    def _compute_display_state(self) -> str:
+    def _compute_display_state(self) -> dict:
         """Derive the display state from all active session states."""
         if not self._session_states:
-            return "sleeping"
-        working_count = sum(
-            1 for s in self._session_states.values()
-            if s["state"] == "working" or s.get("subagents")
+            return {"status": "sleeping"}
+
+        anims = []
+        ids = []
+
+        # Count subagents across ALL sessions, not just visible ones
+        total_subagents = sum(
+            len(s.get("subagents", set())) for s in self._session_states.values()
         )
-        if working_count > 0:
-            return f"working_{min(working_count, 3)}"
-        if any(s["state"] == "thinking" for s in self._session_states.values()):
-            return "thinking"
-        if any(s["state"] == "confused" for s in self._session_states.values()):
-            return "confused"
-        return "idle"
+
+        for session_id, display_id in self._session_order[:4]:
+            state = self._session_states.get(session_id)
+            if state is None:
+                continue
+            session_subagents = state.get("subagents", set())
+
+            if state["state"] == "working" or session_subagents:
+                if session_subagents:
+                    anims.append("building")
+                else:
+                    anims.append("typing")
+            elif state["state"] == "thinking":
+                anims.append("thinking")
+            elif state["state"] == "confused":
+                anims.append("confused")
+            else:
+                anims.append("idle")
+            ids.append(display_id)
+
+        if not anims:
+            return {"status": "sleeping"}
+
+        result = {"anims": anims, "ids": ids, "subagents": total_subagents}
+        if len(self._session_order) > 4:
+            result["overflow"] = len(self._session_order) - 4
+        return result
 
     def _update_session_state(self, event: str, hook: str, session_id: str, agent_id: str = "") -> bool:
         """Update per-session state based on a received event.
@@ -219,6 +265,7 @@ class ClawdDaemon:
         elif event == "dismiss":
             if hook == "SessionEnd":
                 self._session_states.pop(session_id, None)
+                self._session_order = [(sid, did) for sid, did in self._session_order if sid != session_id]
             elif hook == "UserPromptSubmit":
                 self._session_states.setdefault(session_id, {"state": "thinking", "last_event": now})
                 self._session_states[session_id]["state"] = "thinking"
@@ -240,7 +287,12 @@ class ClawdDaemon:
                     subagents.discard(agent_id)
                 self._session_states[session_id]["last_event"] = now
 
+        # Track session order — append on first appearance
         cur = self._session_states.get(session_id)
+        if cur is not None and session_id not in [sid for sid, _ in self._session_order]:
+            self._session_order.append((session_id, self._next_display_id))
+            self._next_display_id += 1
+
         if cur is None:
             return prev is not None  # session was removed
         return cur["state"] != prev_state or cur.get("subagents", set()) != (prev_subagents or set())
@@ -257,20 +309,30 @@ class ClawdDaemon:
             logger.info("Evicting stale session: %s", sid[:12])
             del self._session_states[sid]
         if stale:
+            self._session_order = [(sid, did) for sid, did in self._session_order if sid not in stale]
             self._persist_sessions()
 
     def _persist_sessions(self) -> None:
-        save_sessions(self._session_states, self._sessions_path)
+        save_sessions(
+            self._session_states,
+            self._sessions_path,
+            order=self._session_order,
+            next_id=self._next_display_id,
+        )
 
     async def _broadcast_display_state_if_changed(self) -> None:
-        """Broadcast a set_status action to all connected transports if display state changed."""
+        """Broadcast display state to all connected transports if changed."""
         new_state = self._compute_display_state()
         if new_state == self._last_display_state:
             return
         self._last_display_state = new_state
-        payload = json.dumps({"action": "set_status", "status": new_state})
-        for transport in self._transports.values():
+        for name, transport in self._transports.items():
             if transport.is_connected:
+                version = self._transport_versions.get(name, 1)
+                if version >= 2:
+                    payload = display_state_to_ble_payload(new_state)
+                else:
+                    payload = display_state_to_v1_payload(new_state)
                 await transport.write_notification(payload)
 
     async def _staleness_checker(self) -> None:
@@ -286,6 +348,9 @@ class ClawdDaemon:
     def _on_transport_connect(self, name: str) -> None:
         """Called by a transport client on successful connection."""
         logger.info("Transport '%s' connected", name)
+        # Simulator always supports latest protocol; BLE defaults to v1
+        if name.startswith("sim"):
+            self._transport_versions[name] = 2
         if self._observer:
             self._observer.on_connection_change(True, name)
 
@@ -310,7 +375,21 @@ class ClawdDaemon:
         await transport.write_notification(payload)
         logger.info("Synced time: epoch %d, tz %s", epoch, tz)
 
-    async def _replay_active_for(self, transport) -> None:
+    async def _post_connect_sync(self, transport, name: str) -> None:
+        """Run time sync, version read, and replay after a (re)connection."""
+        await self._sync_time_for(transport)
+        if hasattr(transport, 'read_version') and callable(getattr(transport, 'read_version', None)):
+            try:
+                version = await transport.read_version()
+                if isinstance(version, int) and version >= 1:
+                    self._transport_versions[name] = version
+                    logger.info("Transport '%s': protocol version %d", name, version)
+            except Exception:
+                self._transport_versions[name] = 1
+                logger.warning("Transport '%s': version read failed, defaulting to v1", name)
+        await self._replay_active_for(transport, name)
+
+    async def _replay_active_for(self, transport, name: str = "") -> None:
         """Replay all active notifications to a transport after reconnect."""
         logger.info("Replaying %d active notifications", len(self._active_notifications))
         for msg in list(self._active_notifications.values()):
@@ -326,7 +405,11 @@ class ClawdDaemon:
         # Send current display state
         state = self._compute_display_state()
         self._last_display_state = state
-        status_payload = json.dumps({"action": "set_status", "status": state})
+        version = self._transport_versions.get(name, 1)
+        if version >= 2:
+            status_payload = display_state_to_ble_payload(state)
+        else:
+            status_payload = display_state_to_v1_payload(state)
         await transport.write_notification(status_payload)
 
     async def _transport_sender(self, name: str) -> None:
@@ -336,12 +419,16 @@ class ClawdDaemon:
         # Initial connection — retries until connected
         await transport.ensure_connected()
         if transport.is_connected:
-            await self._sync_time_for(transport)
-            await self._replay_active_for(transport)
+            await self._post_connect_sync(transport, name)
         while self._running:
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
+                # Proactively reconnect if transport dropped
+                if not transport.is_connected:
+                    await transport.ensure_connected()
+                    if transport.is_connected:
+                        await self._post_connect_sync(transport, name)
                 continue
             try:
                 payload = daemon_message_to_ble_payload(msg)
@@ -354,7 +441,7 @@ class ClawdDaemon:
             was_connected = transport.is_connected
             await transport.ensure_connected()
             if not was_connected and transport.is_connected:
-                await self._sync_time_for(transport)
+                await self._post_connect_sync(transport, name)
 
             success = await transport.write_notification(payload)
 
@@ -362,8 +449,9 @@ class ClawdDaemon:
                 was_connected = transport.is_connected
                 await transport.ensure_connected()
                 if not was_connected and transport.is_connected:
-                    await self._sync_time_for(transport)
-                await self._replay_active_for(transport)
+                    await self._post_connect_sync(transport, name)
+                else:
+                    await self._replay_active_for(transport, name)
 
     def _write_pid(self) -> None:
         PID_PATH.parent.mkdir(parents=True, exist_ok=True)
