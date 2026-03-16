@@ -258,7 +258,8 @@ struct scene_t {
     lv_obj_t *noconn_label;
 
     /* HUD overlay */
-    lv_obj_t *hud_canvas;        /* canvas for pixel font rendering */
+    lv_obj_t *hud_canvas;        /* canvas for subagent counter (left) */
+    lv_obj_t *hud_badge_canvas;  /* canvas for overflow/total badge (right, follows container edge) */
     uint8_t hud_subagent_count;
     uint8_t hud_overflow;
 };
@@ -474,13 +475,20 @@ scene_t *scene_create(lv_obj_t *parent)
     lv_label_set_text(s->noconn_label, "No connection");
     lv_obj_add_flag(s->noconn_label, LV_OBJ_FLAG_HIDDEN);
 
-    /* HUD canvas — full width for subagent counter (left) and overflow badge (right) */
+    /* HUD: subagent counter canvas (top-left) */
     s->hud_canvas = lv_canvas_create(s->container);
-    /* Canvas buffer: 320x12 pixels @ ARGB8888 */
-    static uint8_t hud_buf[320 * 12 * 4];
-    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 320, 12, LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 0, 4);
+    static uint8_t hud_buf[80 * 12 * 4];
+    lv_canvas_set_buffer(s->hud_canvas, hud_buf, 80, 12, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_align(s->hud_canvas, LV_ALIGN_TOP_LEFT, 4, 4);
     lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
+
+    /* HUD: overflow/total badge canvas (top-right, follows container edge) */
+    s->hud_badge_canvas = lv_canvas_create(s->container);
+    static uint8_t badge_buf[48 * 12 * 4];
+    lv_canvas_set_buffer(s->hud_badge_canvas, badge_buf, 48, 12, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_align(s->hud_badge_canvas, LV_ALIGN_TOP_RIGHT, -4, 4);
+    lv_obj_add_flag(s->hud_badge_canvas, LV_OBJ_FLAG_HIDDEN);
+
     s->hud_subagent_count = 0;
     s->hud_overflow = 0;
 
@@ -495,6 +503,9 @@ static const int x_centers[][4] = {
     {80, 160, 240},     /* 3 sessions */
     {64, 128, 192, 256} /* 4 sessions */
 };
+
+/* Forward declaration — defined after scene_set_width */
+static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflow, int total_sessions);
 
 /* ---------- Width animation ---------- */
 
@@ -531,7 +542,8 @@ void scene_set_width(scene_t *scene, int width_px, int anim_ms)
             /* Check if this child is a known scene element */
             bool is_known = (child == scene->sky || child == scene->grass ||
                              child == scene->time_label || child == scene->noconn_label ||
-                             child == scene->hud_canvas);
+                             child == scene->hud_canvas ||
+                             child == scene->hud_badge_canvas);
             if (!is_known) {
                 for (int si = 0; si < STAR_COUNT && !is_known; si++)
                     if (scene->stars[si] == child) is_known = true;
@@ -564,6 +576,9 @@ void scene_set_width(scene_t *scene, int width_px, int anim_ms)
         }
         /* Also clear pending_reposition since we're going narrow */
         scene->pending_reposition = false;
+        /* Refresh badge: switch from +N to ×N format */
+        scene_update_hud(scene, scene->hud_subagent_count, scene->hud_overflow,
+                         scene->active_slot_count + scene->hud_overflow);
     } else if (!scene->narrow && was_narrow) {
         /* Going wide: unhide slots 1+ and walk ALL slots to their
          * correct multi-session positions (slot 0 was centered for narrow). */
@@ -605,6 +620,9 @@ void scene_set_width(scene_t *scene, int width_px, int anim_ms)
                              target_x_off, def->y_offset);
             }
         }
+        /* Refresh badge: switch from ×N to +N format */
+        scene_update_hud(scene, scene->hud_subagent_count, scene->hud_overflow,
+                         scene->active_slot_count + scene->hud_overflow);
     }
 
     if (anim_ms <= 0) {
@@ -811,34 +829,31 @@ static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflo
     s->hud_subagent_count = subagent_count;
     s->hud_overflow = overflow;
 
-    bool show_subagents = subagent_count > 0;
-    bool show_badge = s->narrow ? (total_sessions > 1) : (overflow > 0);
-    if (!show_subagents && !show_badge) {
-        lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-
-    /* Clear canvas */
-    lv_canvas_fill_bg(s->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
-
+    /* --- Subagent counter (left canvas) --- */
     if (subagent_count > 0) {
-        /* Draw "xN" for subagent count at the left */
+        lv_canvas_fill_bg(s->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
         char buf[8];
         snprintf(buf, sizeof(buf), "x%d", subagent_count);
         pixel_font_draw(s->hud_canvas, buf, 4, 1, 2, lv_color_hex(0xFFC107));
+        lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (s->narrow && total_sessions > 1) {
-        /* Narrow mode: show total session count at the right */
+    /* --- Overflow/total badge (right canvas, follows container edge) --- */
+    bool show_badge = s->narrow ? (total_sessions > 1) : (overflow > 0);
+    if (show_badge) {
+        lv_canvas_fill_bg(s->hud_badge_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
         char buf[8];
-        snprintf(buf, sizeof(buf), "x%d", total_sessions);
-        /* 2 chars × (5+1) × scale2 = 24px, right-align at 320-24-4 = 292 */
-        pixel_font_draw(s->hud_canvas, buf, 292, 1, 2, lv_color_hex(0x8BC6FC));
-    } else if (!s->narrow && overflow > 0) {
-        /* Full mode: show overflow count at the far right */
-        char buf[8];
-        snprintf(buf, sizeof(buf), "+%d", overflow);
-        pixel_font_draw(s->hud_canvas, buf, 292, 1, 2, lv_color_hex(0x8BC6FC));
+        if (s->narrow && total_sessions > 1) {
+            snprintf(buf, sizeof(buf), "x%d", total_sessions);
+        } else {
+            snprintf(buf, sizeof(buf), "+%d", overflow);
+        }
+        pixel_font_draw(s->hud_badge_canvas, buf, 0, 1, 2, lv_color_hex(0x8BC6FC));
+        lv_obj_clear_flag(s->hud_badge_canvas, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s->hud_badge_canvas, LV_OBJ_FLAG_HIDDEN);
     }
 
     lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
