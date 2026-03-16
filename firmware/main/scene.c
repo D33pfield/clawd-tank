@@ -195,6 +195,16 @@ static const anim_def_t anim_defs[] = {
         .height = GOING_AWAY_HEIGHT,
         .y_offset = 8,
     },
+    [CLAWD_ANIM_MINI_CLAWD] = {
+        .rle_data = mini_crab_rle_data,
+        .frame_offsets = mini_crab_frame_offsets,
+        .frame_count = MINI_CRAB_FRAME_COUNT,
+        .frame_ms = 250,  /* 4fps */
+        .looping = true,
+        .width = MINI_CRAB_WIDTH,
+        .height = MINI_CRAB_HEIGHT,
+        .y_offset = 0,
+    },
 };
 
 /* ---------- Multi-slot support ---------- */
@@ -811,13 +821,13 @@ void scene_tick(scene_t *scene)
         uint32_t mc_elapsed = now - scene->mini_crab_last_tick;
         if (mc_elapsed >= 250) {  /* 250ms = 4fps */
             scene->mini_crab_last_tick = now;
-            scene->mini_crab_frame = (scene->mini_crab_frame + 1) % MINI_CRAB_FRAME_COUNT;
+            scene->mini_crab_frame = (scene->mini_crab_frame + 1) % anim_defs[CLAWD_ANIM_MINI_CLAWD].frame_count;
             /* Redraw the subagent canvas with the new frame */
             lv_canvas_fill_bg(scene->hud_canvas, lv_color_hex(0x000000), LV_OPA_TRANSP);
             hud_blit_mini_crab(scene->hud_canvas, scene->mini_crab_frame, 0, 0);
             char buf[8];
             snprintf(buf, sizeof(buf), "x%d", scene->hud_subagent_count);
-            pixel_font_draw(scene->hud_canvas, buf, MINI_CRAB_WIDTH + 2, 1, 2, lv_color_hex(0xFFC107));
+            pixel_font_draw(scene->hud_canvas, buf, anim_defs[CLAWD_ANIM_MINI_CLAWD].width + 2, 1, 2, lv_color_hex(0xFFC107));
         }
     }
 }
@@ -849,13 +859,14 @@ static int find_id_in(const uint16_t *ids, int count, uint16_t target)
 /* Blit a mini-crab RLE frame onto an ARGB8888 canvas at (dx, dy) */
 static void hud_blit_mini_crab(lv_obj_t *canvas, int frame_idx, int dx, int dy)
 {
-    if (frame_idx < 0 || frame_idx >= MINI_CRAB_FRAME_COUNT) return;
-    const uint16_t *rle = &mini_crab_rle_data[mini_crab_frame_offsets[frame_idx]];
-    uint8_t decoded[MINI_CRAB_WIDTH * MINI_CRAB_HEIGHT * 4];
-    rle_decode_argb8888(rle, decoded, MINI_CRAB_WIDTH * MINI_CRAB_HEIGHT, TRANSPARENT_KEY);
-    for (int y = 0; y < MINI_CRAB_HEIGHT; y++) {
-        for (int x = 0; x < MINI_CRAB_WIDTH; x++) {
-            int src = (y * MINI_CRAB_WIDTH + x) * 4;
+    const anim_def_t *def = &anim_defs[CLAWD_ANIM_MINI_CLAWD];
+    if (frame_idx < 0 || frame_idx >= def->frame_count) return;
+    const uint16_t *rle = &def->rle_data[def->frame_offsets[frame_idx]];
+    uint8_t decoded[def->width * def->height * 4];
+    rle_decode_argb8888(rle, decoded, def->width * def->height, TRANSPARENT_KEY);
+    for (int y = 0; y < def->height; y++) {
+        for (int x = 0; x < def->width; x++) {
+            int src = (y * def->width + x) * 4;
             if (decoded[src + 3] == 0) continue;  /* skip transparent */
             lv_canvas_set_px(canvas, dx + x, dy + y,
                              lv_color_make(decoded[src + 2], decoded[src + 1], decoded[src]),
@@ -874,7 +885,7 @@ static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflo
         hud_blit_mini_crab(s->hud_canvas, s->mini_crab_frame, 0, 0);
         char buf[8];
         snprintf(buf, sizeof(buf), "x%d", subagent_count);
-        pixel_font_draw(s->hud_canvas, buf, MINI_CRAB_WIDTH + 2, 1, 2, lv_color_hex(0xFFC107));
+        pixel_font_draw(s->hud_canvas, buf, anim_defs[CLAWD_ANIM_MINI_CLAWD].width + 2, 1, 2, lv_color_hex(0xFFC107));
         lv_obj_clear_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s->hud_canvas, LV_OBJ_FLAG_HIDDEN);
@@ -1233,7 +1244,7 @@ const char *anim_id_to_name(clawd_anim_id_t id)
     static const char *names[] = {
         "idle", "alert", "happy", "sleeping", "disconnected",
         "thinking", "typing", "juggling", "building", "confused",
-        "sweeping", "walking", "going_away"
+        "sweeping", "walking", "going_away", "mini_clawd"
     };
     if ((int)id < (int)(sizeof(names) / sizeof(names[0]))) return names[id];
     return "unknown";
