@@ -543,12 +543,27 @@ void scene_set_width(scene_t *scene, int width_px, int anim_ms)
                 lv_obj_delete(child);
             }
         }
-        /* Re-center slot 0 for narrow container */
-        if (scene->slots[0].active) {
+        /* Re-center slot 0 for narrow container.
+         * Cancel any in-progress walk animation — it uses full-width x_off
+         * targets that would push the sprite off-screen in a 107px container. */
+        if (scene->slots[0].active && scene->slots[0].sprite_img) {
+            if (scene->slots[0].walking_in) {
+                lv_anim_delete(scene->slots[0].sprite_img, (lv_anim_exec_xcb_t)lv_obj_set_x);
+                scene->slots[0].walking_in = false;
+                /* Switch from walking to target animation */
+                clawd_anim_id_t target = scene->slots[0].fallback_anim;
+                scene->slots[0].cur_anim = target;
+                scene->slots[0].frame_idx = 0;
+                scene->slots[0].last_frame_tick = lv_tick_get();
+                decode_and_apply_frame(&scene->slots[0]);
+            }
             scene->slots[0].x_off = 0;
             const anim_def_t *def = &anim_defs[scene->slots[0].cur_anim];
+            lv_obj_set_size(scene->slots[0].sprite_img, def->width, def->height);
             lv_obj_align(scene->slots[0].sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
         }
+        /* Also clear pending_reposition since we're going narrow */
+        scene->pending_reposition = false;
     } else if (!scene->narrow && was_narrow) {
         /* Going wide: unhide slots 1+ and walk ALL slots to their
          * correct multi-session positions (slot 0 was centered for narrow). */
