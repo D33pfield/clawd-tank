@@ -2,11 +2,33 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-session display** — Up to 4 concurrent Claude Code sessions rendered as individual Clawd sprites with per-session animations. Protocol v2 `set_sessions` action sends per-session animation state and stable UUIDs. Overflow badge shows "+N" when sessions exceed `MAX_VISIBLE=4`.
+- **Walk-in animation** — New sessions enter from offscreen with a walking sprite animation. Existing sessions reposition with walk animations when the layout changes.
+- **Going-away burrowing animation** — Sessions that exit play a burrowing animation instead of a fade-out. Remaining sessions defer repositioning until the burrowing completes.
+- **HUD subagent counter** — Mini-crab icon with pixel-art bitmap font shows active subagent count. Session overflow badge anchored to container right edge.
+- **Per-session sweeping** — `PreCompact` events now send a sweep animation only to the compacting session (v2), instead of a global sweep (v1 fallback preserved).
+- **Protocol version negotiation** — BLE GATT characteristic exposes protocol version (v2). Daemon reads it on connect and selects v1 `set_status` or v2 `set_sessions` payloads per-transport.
+- **`query_state` TCP action** — Debug introspection command returns JSON with all slot states, animations, and positions.
+- **`gemini_animate.py` tool** — AI-assisted SVG animation generation using Gemini API.
+- **New sprite assets** — Going-away burrowing sprite, walking sprite, mini-clawd HUD sprite, with SVG sources.
+
+### Changed
+
+- **Scene slot architecture** — `MAX_VISIBLE=4` display slots with `MAX_SLOTS=8` total (extra slots accommodate departing animations at full capacity).
+- **`build.sh` always rebuilds** — No stale check; static simulator is always rebuilt to avoid version drift.
+
 ### Fixed
 
 - **Simulator window resizing** — Replaced integer-step scaling (which left large black dead zones between scale jumps) with continuous float scaling that fills the window smoothly at any size.
 - **Aspect ratio enforcement** — Window now locks to the native display aspect ratio (328:180) during resize, eliminating black letterbox bars. Drag direction is detected (horizontal, vertical, or corner) to adjust the correct axis.
 - **LED border rendering** — Border now renders uniformly around the content by filling the entire window with the LED color and insetting the framebuffer, instead of computing separate border and content rects with rounding gaps.
+- **Narrow mode walk suppression** — Walk animations correctly cancelled when entering narrow mode (notification cards visible).
+- **Deferred reposition detection** — Position change detection fixed for post-burrowing repositioning.
+- **HUD canvas cleanup** — HUD canvas properly cleared when hiding subagent counter.
+- **BLE version reading** — `read_version` return type validated for mock compatibility in tests.
+- **Bounds check for empty sessions** — `set_sessions` with empty session list handled safely.
 
 ## [1.2.1] - 2026-03-14
 
