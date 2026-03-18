@@ -317,6 +317,9 @@ static void apply_pinned(void)
         long level = s_pinned ? NS_FLOATING_WINDOW_LEVEL : NS_NORMAL_WINDOW_LEVEL;
         ((void(*)(id, SEL, long))objc_msgSend)(nswindow,
                     sel_registerName("setLevel:"), level);
+        fprintf(stderr, "[display] apply_pinned: pinned=%d level=%ld nswindow=%p\n", s_pinned, level, nswindow);
+    } else {
+        fprintf(stderr, "[display] apply_pinned: SDL_GetWindowWMInfo failed\n");
     }
 #else
     SDL_SetWindowAlwaysOnTop(s_window, s_pinned ? SDL_TRUE : SDL_FALSE);
@@ -335,6 +338,7 @@ void sim_display_set_pinned(bool pinned)
 void sim_display_show_window(void)
 {
     if (!s_window) return;
+    fprintf(stderr, "[display] show_window: pinned=%d\n", s_pinned);
     SDL_ShowWindow(s_window);
     SDL_RaiseWindow(s_window);
     /* Re-apply always-on-top — macOS resets window level on show */
