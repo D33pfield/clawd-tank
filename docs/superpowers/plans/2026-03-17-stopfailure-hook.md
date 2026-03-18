@@ -331,8 +331,8 @@ Expected: All PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add host/clawd_tank_menubar/hooks.py host/clawd-tank-notify
-git commit -m "feat: register StopFailure hook and update hook scripts"
+git add host/clawd_tank_menubar/hooks.py
+git commit -m "feat: register StopFailure hook and update embedded script"
 ```
 
 ---
