@@ -708,6 +708,27 @@ void scene_set_clawd_anim(scene_t *scene, clawd_anim_id_t anim)
     if (!scene) return;
     clawd_slot_t *slot = &scene->slots[0];
     if (!slot->active) return;
+
+    /* Deactivate all extra slots — v1 path = single-clawd mode */
+    for (int i = 1; i < MAX_SLOTS; i++) {
+        if (scene->slots[i].active) {
+            if (scene->slots[i].sprite_img) {
+                lv_anim_delete(scene->slots[i].sprite_img,
+                               (lv_anim_exec_xcb_t)lv_obj_set_x);
+                lv_obj_delete(scene->slots[i].sprite_img);
+                scene->slots[i].sprite_img = NULL;
+            }
+            free(scene->slots[i].frame_buf);
+            scene->slots[i].frame_buf = NULL;
+            scene->slots[i].frame_buf_size = 0;
+            scene->slots[i].active = false;
+            scene->slots[i].departing = false;
+        }
+    }
+    scene->active_slot_count = 1;
+    scene->pending_reposition = false;
+    scene_update_hud(scene, 0, 0, 1);
+
     if (anim == slot->cur_anim) return;
 
     slot->cur_anim = anim;
