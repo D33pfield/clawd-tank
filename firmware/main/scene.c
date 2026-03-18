@@ -1299,8 +1299,19 @@ void scene_set_sessions(scene_t *s, const uint8_t *anims, const uint16_t *ids,
             }
         }
         if (s->slots[0].active && s->slots[0].sprite_img) {
+            lv_obj_clear_flag(s->slots[0].sprite_img, LV_OBJ_FLAG_HIDDEN);
+            if (s->slots[0].walking_in) {
+                lv_anim_delete(s->slots[0].sprite_img,
+                               (lv_anim_exec_xcb_t)lv_obj_set_x);
+                s->slots[0].walking_in = false;
+                s->slots[0].cur_anim = s->slots[0].fallback_anim;
+                s->slots[0].frame_idx = 0;
+                s->slots[0].last_frame_tick = lv_tick_get();
+                decode_and_apply_frame(&s->slots[0]);
+            }
             s->slots[0].x_off = 0;
             const anim_def_t *def = &anim_defs[s->slots[0].cur_anim];
+            lv_obj_set_size(s->slots[0].sprite_img, def->width, def->height);
             lv_obj_align(s->slots[0].sprite_img, LV_ALIGN_BOTTOM_MID, 0, def->y_offset);
         }
     }
