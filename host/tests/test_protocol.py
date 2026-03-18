@@ -450,6 +450,17 @@ def test_normal_add_ble_payload_no_alert():
     assert "alert" not in parsed
 
 
+def test_stop_failure_stop_reason_fallback():
+    hook = {
+        "hook_event_name": "StopFailure",
+        "session_id": "s1",
+        "cwd": "/tmp/proj",
+        "stop_reason": "max_turns",
+    }
+    msg = hook_payload_to_daemon_message(hook)
+    assert msg["message"] == "max_turns"
+
+
 def test_display_state_to_v1_dizzy_maps_to_confused():
     state = {"anims": ["dizzy"], "ids": [1], "subagents": 0}
     payload = display_state_to_v1_payload(state)
