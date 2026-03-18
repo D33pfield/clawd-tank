@@ -7,11 +7,16 @@ from unittest.mock import patch
 from clawd_tank_daemon.sim_process import SimProcessManager
 
 def test_find_binary_in_app_bundle():
+    """When running inside an .app bundle, finds sim in Contents/Resources/."""
     mgr = SimProcessManager()
-    with patch.object(os.path, "isfile", return_value=True):
-        with patch("sys.executable", "/App.app/Contents/MacOS/python"):
-            path = mgr._find_binary()
-            assert path == "/App.app/Contents/MacOS/clawd-tank-sim"
+    # isfile returns True only for the Resources path
+    def fake_isfile(path):
+        return path.endswith("Contents/Resources/clawd-tank-sim")
+    with patch.object(os.path, "isfile", side_effect=fake_isfile):
+        path = mgr._find_binary()
+        # On macOS, NSBundle is available and returns a real bundle path
+        assert path is not None
+        assert path.endswith("Contents/Resources/clawd-tank-sim")
 
 def test_find_binary_fallback_to_which():
     mgr = SimProcessManager()

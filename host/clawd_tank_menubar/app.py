@@ -521,6 +521,11 @@ def main():
     if not hooks.are_hooks_installed():
         logger.info("Hooks outdated, auto-updating...")
         hooks.install_hooks()
+
+    # Kill stale sim processes synchronously before anything else
+    from clawd_tank_daemon.sim_process import SimProcessManager
+    SimProcessManager.kill_stale_sims()
+
     app = ClawdTankApp()
     app._start_daemon_thread()
     app.run()

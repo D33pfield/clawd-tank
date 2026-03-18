@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-03-18
+
+### Fixed
+
+- **Narrow mode empty scenery** — When the notification panel was open and slot 0's session closed, the replacement sprite transferred from a hidden slot retained its hidden flag, leaving an empty scene. The narrow guard now unhides slot 0 and cancels any stale walk-in animation.
+- **Disconnect shows extra clawds** — Disconnecting with multiple active sessions left stale session clawds visible alongside the disconnected animation. `scene_set_clawd_anim` now deactivates all extra slots when switching to single-clawd mode.
+- **Main clawd goes away on connect** — Connecting with active sessions caused the disconnect clawd to play going-away while new session clawds walked in from offscreen. The disconnect clawd is now adopted as slot 0 and smoothly repositions.
+- **Orphaned simulator blocks app reopen** — If the menu bar app crashed, the orphaned simulator process (inside `Contents/MacOS/`) caused macOS to think the app was already running. Simulator binary moved to `Contents/Resources/` so Launch Services no longer blocks reopening. Stale sim processes are also killed synchronously at startup.
+
 ## [1.3.1] - 2026-03-18
 
 ### Added

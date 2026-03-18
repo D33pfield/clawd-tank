@@ -22,7 +22,7 @@ rm -rf build dist
 
 # Bundle simulator binary
 echo "==> Bundling simulator binary..."
-cp "$SIM_BINARY" "dist/Clawd Tank.app/Contents/MacOS/clawd-tank-sim"
+cp "$SIM_BINARY" "dist/Clawd Tank.app/Contents/Resources/clawd-tank-sim"
 
 echo "==> Built: dist/Clawd Tank.app"
 

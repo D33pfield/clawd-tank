@@ -23,21 +23,22 @@ class SimProcessManager:
         self._start_pinned = start_pinned
 
     def _find_binary(self) -> Optional[str]:
-        # 1. Next to sys.executable (inside .app bundle)
-        exe_dir = os.path.dirname(sys.executable)
-        candidate = os.path.join(exe_dir, "clawd-tank-sim")
-        if os.path.isfile(candidate):
-            return candidate
-        # 2. NSBundle path (py2app)
+        # 1. Contents/Resources/ (inside .app bundle — helper binaries belong here,
+        #    not in Contents/MacOS/, to avoid macOS treating them as the main app)
         try:
             from Foundation import NSBundle
             bundle = NSBundle.mainBundle()
             if bundle:
-                bundle_candidate = os.path.join(bundle.bundlePath(), "Contents", "MacOS", "clawd-tank-sim")
-                if os.path.isfile(bundle_candidate):
-                    return bundle_candidate
+                candidate = os.path.join(bundle.bundlePath(), "Contents", "Resources", "clawd-tank-sim")
+                if os.path.isfile(candidate):
+                    return candidate
         except ImportError:
             pass
+        # 2. Next to sys.executable (fallback for non-bundle environments)
+        exe_dir = os.path.dirname(sys.executable)
+        candidate = os.path.join(exe_dir, "clawd-tank-sim")
+        if os.path.isfile(candidate):
+            return candidate
         # 3. PATH lookup (development)
         return shutil.which("clawd-tank-sim")
 
@@ -54,34 +55,20 @@ class SimProcessManager:
         if self._on_window_event:
             self._on_window_event(event)
 
-    async def _kill_orphaned_sim(self) -> None:
-        """Kill any orphaned clawd-tank-sim processes listening on our port."""
-        def _do_kill():
+    @staticmethod
+    def kill_stale_sims() -> None:
+        """Kill ALL clawd-tank-sim processes. Safe at startup since any existing
+        sim is necessarily orphaned from a previous app instance.
+        Synchronous — call before the asyncio loop starts."""
+        try:
             result = subprocess.run(
-                ["lsof", "-ti", f":{self._port}"],
+                ["pkill", "-9", "-f", "clawd-tank-sim"],
                 capture_output=True, text=True, timeout=5,
             )
-            if result.returncode != 0:
-                return
-            for pid_str in result.stdout.strip().split('\n'):
-                if not pid_str.strip():
-                    continue
-                pid = int(pid_str)
-                # Verify it's actually a clawd-tank-sim process
-                ps_result = subprocess.run(
-                    ["ps", "-p", str(pid), "-o", "comm="],
-                    capture_output=True, text=True, timeout=5,
-                )
-                if "clawd-tank-sim" not in ps_result.stdout:
-                    logger.warning("PID %d on port %d is not clawd-tank-sim, skipping", pid, self._port)
-                    continue
-                logger.info("Killing orphaned clawd-tank-sim (PID %d) on port %d", pid, self._port)
-                os.kill(pid, signal.SIGKILL)
-        try:
-            await asyncio.to_thread(_do_kill)
-        except (subprocess.TimeoutExpired, ValueError, ProcessLookupError,
-                PermissionError, FileNotFoundError, OSError):
-            pass
+            if result.returncode == 0:
+                logger.info("Killed stale clawd-tank-sim processes")
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            logger.warning("Failed to kill stale sims: %s", e)
 
     async def _log_stream(self, stream, level) -> None:
         if not stream:
@@ -95,16 +82,15 @@ class SimProcessManager:
             pass
 
     async def start(self) -> Optional[SimClient]:
+        # Wait for port to be released (stale sims killed in main() before event loop)
         if await self._is_port_in_use():
-            logger.warning("Port %d already in use, killing orphaned process", self._port)
-            await self._kill_orphaned_sim()
-            # Wait for port to be released, with timeout
+            logger.warning("Port %d in use, waiting for release after stale sim kill", self._port)
             for _ in range(10):
                 await asyncio.sleep(0.5)
                 if not await self._is_port_in_use():
                     break
             else:
-                logger.error("Port %d still in use after killing orphan", self._port)
+                logger.error("Port %d still in use after waiting", self._port)
                 return None
 
         binary = self._find_binary()
