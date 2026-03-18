@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <SDL.h>
+#ifdef __APPLE__
+#include <objc/objc.h>
+#include <objc/message.h>
+#endif
 
 /* Border width in native pixels (scaled with window) */
 #define LED_BORDER_PX 4
@@ -107,7 +111,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 
 /* ---- Init ---- */
 
-lv_display_t *sim_display_init(bool headless, int scale, bool bordered)
+lv_display_t *sim_display_init(bool headless, int scale, bool bordered, bool pinned)
 {
     s_headless = headless;
     s_scale = scale > 0 ? scale : 3;
@@ -120,6 +124,16 @@ lv_display_t *sim_display_init(bool headless, int scale, bool bordered)
         /* Interactive: use SDL_GetTicks */
         SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, "1");  /* Don't show in Dock */
         SDL_Init(SDL_INIT_VIDEO);
+#ifdef __APPLE__
+        /* Set activation policy to Accessory so the app hides from Dock
+         * but still supports NSFloatingWindowLevel (always-on-top).
+         * SDL_HINT_MAC_BACKGROUND_APP skips setActivationPolicy entirely,
+         * which breaks window level management on macOS. */
+        id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"),
+                    sel_registerName("sharedApplication"));
+        ((void(*)(id, SEL, long))objc_msgSend)(nsapp,
+                    sel_registerName("setActivationPolicy:"), 1 /* NSApplicationActivationPolicyAccessory */);
+#endif
         lv_tick_set_cb(sdl_tick_cb);
 
         int border = LED_BORDER_PX * s_scale;
@@ -128,6 +142,7 @@ lv_display_t *sim_display_init(bool headless, int scale, bool bordered)
 
         Uint32 flags = SDL_WINDOW_RESIZABLE;
         if (!bordered) flags |= SDL_WINDOW_BORDERLESS;
+        if (pinned) flags |= SDL_WINDOW_ALWAYS_ON_TOP;
         s_window = SDL_CreateWindow(
             "Clawd Tank Simulator",
             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
