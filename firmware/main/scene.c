@@ -1051,7 +1051,7 @@ static void scene_update_hud(scene_t *s, uint8_t subagent_count, uint8_t overflo
             snprintf(buf, sizeof(buf), "+%d", overflow);
         }
         pixel_font_draw(s->hud_badge_canvas, buf, 0, 1, 2, lv_color_hex(0x8BC6FC));
-        lv_obj_align_to(s->hud_badge_canvas, s->container, LV_ALIGN_TOP_RIGHT, -1, 4);
+        lv_obj_align_to(s->hud_badge_canvas, s->container, LV_ALIGN_TOP_RIGHT, -48, 4);
         lv_obj_clear_flag(s->hud_badge_canvas, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s->hud_badge_canvas, LV_OBJ_FLAG_HIDDEN);
