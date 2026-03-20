@@ -22,10 +22,10 @@ Claude Code hooks --> clawd-tank-notify --> daemon --> BLE --> ESP32-C6 display
                                                   \-> TCP --> Simulator (SDL2)
 ```
 
-1. **Claude Code hooks** (`SessionStart`, `PreToolUse`, `PreCompact`, `Stop`, `Notification`, `UserPromptSubmit`, `SessionEnd`, `SubagentStart`, `SubagentStop`) fire on session events
+1. **Claude Code hooks** (`SessionStart`, `PreToolUse`, `PreCompact`, `Stop`, `StopFailure`, `Notification`, `UserPromptSubmit`, `SessionEnd`, `SubagentStart`, `SubagentStop`) fire on session events
 2. **clawd-tank-notify** (`~/.clawd-tank/clawd-tank-notify`) forwards the event to the daemon via Unix socket
-3. The **daemon** tracks per-session state, computes a display state, and sends JSON payloads to connected transports (BLE hardware, TCP simulator)
-4. The **firmware** (or simulator) renders Clawd's working animation + notification cards on the LCD via LVGL
+3. The **daemon** tracks per-session state, maps `tool_name` to animations, and sends JSON payloads to connected transports (BLE hardware, TCP simulator)
+4. The **firmware** (or simulator) renders Clawd's tool-aware animation + notification cards on the LCD via LVGL
 
 ## Components
 
@@ -142,7 +142,7 @@ The daemon auto-starts on the first hook event. Logs at `~/.clawd-tank/daemon.lo
 ## Features
 
 - **Multi-session display** — up to 4 concurrent Claude Code sessions shown as individual animated Clawd sprites, each with their own working animation. New sessions walk in, exiting sessions burrow away
-- **Working animations** — real-time session-aware animations driven by Claude Code hooks (thinking, typing, juggling, building, confused, sweeping)
+- **Tool-aware animations** — Clawd shows distinct animations based on which tool Claude is using: debugger (Read/Grep), typing (Edit/Write), building (Bash), wizard (WebSearch), conducting (Agent/subagents), beacon (LSP/MCP)
 - **Session tracking** — daemon tracks per-session state with priority-based display resolution, staleness eviction, and subagent lifecycle tracking
 - **Session persistence** — session state survives daemon restarts, so relaunching the app immediately shows the correct animation for running sessions
 - **Time display** — synced from host over BLE on connect (no WiFi/NTP needed)
@@ -158,17 +158,25 @@ The daemon auto-starts on the first hook event. Logs at `~/.clawd-tank/daemon.lo
 
 ## Clawd's Moods
 
-### Working Animations
+### Tool-Aware Animations
 
-Clawd's animation reflects what Claude is doing across all active sessions. With multiple sessions, each gets its own Clawd sprite:
+Clawd's animation reflects which tool Claude is currently using. Each session gets its own Clawd sprite with a tool-specific animation:
+
+| Animation | Tools | |
+|-----------|-------|---|
+| **Debugger** | `Read`, `Grep`, `Glob` — searching/inspecting code | ![Debugger](assets/sim-recordings/clawd-debugger.gif) |
+| **Typing** | `Edit`, `Write`, `NotebookEdit` — writing code | ![Typing](assets/sim-recordings/clawd-typing.gif) |
+| **Building** | `Bash` — running shell commands | ![Building](assets/sim-recordings/clawd-building.gif) |
+| **Conducting** | `Agent` / active subagents — orchestrating work | ![Conducting](assets/sim-recordings/clawd-conducting.gif) |
+| **Wizard** | `WebSearch`, `WebFetch` — conjuring web knowledge | ![Wizard](assets/sim-recordings/clawd-wizard.gif) |
+| **Beacon** | `LSP`, MCP tools (`mcp__*`) — communicating with services | ![Beacon](assets/sim-recordings/clawd-beacon.gif) |
+
+### Session States
 
 | State | When | |
 |-------|------|---|
-| **Multi-session** | 2+ concurrent sessions, each with individual animations | ![Multi-session](assets/sim-recordings/clawd-multi-session.gif) |
+| **Multi-session** | 2+ concurrent sessions, each with individual tool animations | ![Multi-session](assets/sim-recordings/clawd-multi-session.gif) |
 | **Thinking** | User submitted a prompt, Claude is reasoning | ![Thinking](assets/sim-recordings/clawd-thinking.gif) |
-| **Typing** | 1 session using tools | ![Typing](assets/sim-recordings/clawd-typing.gif) |
-| **Juggling** | 2 sessions using tools simultaneously (v1) | ![Juggling](assets/sim-recordings/clawd-juggling.gif) |
-| **Building** | 3+ sessions using tools simultaneously (v1) | ![Building](assets/sim-recordings/clawd-building.gif) |
 | **Confused** | Claude has been waiting 60s+ for user input | ![Confused](assets/sim-recordings/clawd-confused.gif) |
 | **Sweeping** | Context compaction (PreCompact) — oneshot | ![Sweeping](assets/sim-recordings/clawd-sweeping.gif) |
 
