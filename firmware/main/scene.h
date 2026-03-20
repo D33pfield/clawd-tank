@@ -18,6 +18,10 @@ typedef enum {
     CLAWD_ANIM_SWEEPING,
     CLAWD_ANIM_WALKING,     /* crab-walking sideways (placeholder uses idle sprite) */
     CLAWD_ANIM_GOING_AWAY,  /* burrowing into ground (oneshot, session exit) */
+    CLAWD_ANIM_DEBUGGER,    /* sneaking with magnifying glass (Read/Grep/Glob) */
+    CLAWD_ANIM_WIZARD,      /* floating with wand + sparkles (WebSearch/WebFetch) */
+    CLAWD_ANIM_CONDUCTING,  /* arms waving, data streaming (Agent/subagents) */
+    CLAWD_ANIM_BEACON,      /* antenna with radio waves (LSP/MCP) */
     CLAWD_ANIM_MINI_CLAWD,  /* tiny 12x12 crab for HUD subagent counter */
 } clawd_anim_id_t;
 

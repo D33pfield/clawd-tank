@@ -1372,7 +1372,9 @@ const char *anim_id_to_name(clawd_anim_id_t id)
     static const char *names[] = {
         "idle", "alert", "happy", "sleeping", "disconnected",
         "thinking", "typing", "juggling", "building", "confused",
-        "dizzy", "sweeping", "walking", "going_away", "mini_clawd"
+        "dizzy", "sweeping", "walking", "going_away",
+        "debugger", "wizard", "conducting", "beacon",
+        "mini_clawd"
     };
     if ((int)id < (int)(sizeof(names) / sizeof(names[0]))) return names[id];
     return "unknown";
