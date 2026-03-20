@@ -30,9 +30,9 @@ All mapping logic lives in `daemon.py`. The firmware learns 4 new animation name
 
 ## Data Flow Changes
 
-### 1. Hook handler (`host/clawd-tank-notify`)
+### 1. Hook handler (`host/clawd-tank-notify` + `host/clawd_tank_menubar/hooks.py`)
 
-Extract `tool_name` from the `PreToolUse` hook payload and include it in the daemon message:
+Extract `tool_name` from the `PreToolUse` hook payload and include it in the daemon message. **Both** the standalone script and the embedded `NOTIFY_SCRIPT` in `hooks.py` must be updated — the menu bar app deploys the embedded copy.
 
 ```python
 # Before
@@ -48,9 +48,12 @@ Pass through `tool_name` from the hook payload into the daemon message for `PreT
 
 ### 3. Daemon state management (`host/clawd_tank_daemon/daemon.py`)
 
-- Store `tool_name` on the session state dict alongside `state: "working"`
-- In `_compute_display_state()`, map tool_name to animation name using the mapping table
-- Subagent override: if session has active subagents, always use `conducting`
+- Store `tool_name` on the session state dict: `self._session_states[session_id]["tool_name"] = msg.get("tool_name", "")`
+- Pass the full `msg` dict (or `tool_name` field) through `_handle_message()` → `_update_session_state()` for `tool_use` events
+- In `_compute_display_state()`, determine animation with this priority:
+  1. If session has active subagents → `"conducting"` (short-circuit, skip tool lookup)
+  2. Else if session state is `"working"` → `_tool_to_anim(session["tool_name"])`
+  3. Else → existing state-based mapping (thinking, confused, dizzy, idle)
 
 Tool-name to animation mapping function:
 
@@ -94,7 +97,7 @@ Add 4 new entries to `parse_anim_name()`:
 
 ### 5. Firmware scene (`firmware/main/scene.h` + `scene.c`)
 
-Add 4 new animation enum values with sprite metadata (frame count, fps, looping flag). Sprite data generated via the existing pipeline.
+Add 4 new animation enum values with sprite metadata (frame count, fps, looping flag). Sprite data generated via the existing pipeline. Also update `anim_id_to_name()` string array for debug/`query_state` JSON output.
 
 ## Sprite Pipeline
 
@@ -138,8 +141,14 @@ Default `y_offset = -8` for all new sprites.
 
 **Unknown/custom tools:** MCP tools arrive as `mcp__server__tool_name` — any tool starting with `mcp__` maps to `beacon`. All other unrecognized tools fall back to `typing`.
 
-**V1 protocol compatibility:** V1 transports receive `set_status` with aggregated intensity strings (`working_1`/`working_2`/`working_3`). Tool sub-state does not affect v1. Tool-aware animations are v2-only.
+**V1 protocol compatibility:** V1 transports receive `set_status` with aggregated intensity strings (`working_1`/`working_2`/`working_3`). The `display_state_to_v1_payload()` function counts working sessions by matching animation names against `("typing", "building")`. This set must be expanded to include the 4 new animation names (`"debugger"`, `"wizard"`, `"conducting"`, `"beacon"`) so that v1 transports correctly count all tool-active sessions as "working". The v1 `WORKING_ANIMS` set should be:
+
+```python
+WORKING_ANIMS = {"typing", "building", "debugger", "wizard", "conducting", "beacon"}
+```
+
+**`CLAWD_ANIM_JUGGLING` retirement (v2):** The `juggling` animation was used for v1 intensity tier `working_2` (2 concurrent sessions). With v2 tool-aware animations, each session gets its own tool-specific animation. `juggling` remains available in the firmware enum and continues to work for v1 `set_status`, but no v2 code path produces it.
 
 **Session persistence:** The `tool_name` sub-state is ephemeral — not saved to `sessions.json`. On daemon restart, sessions restore as `working` → `typing` until the next `PreToolUse` event arrives. Active sessions will send new tool events within seconds.
 
-**Graceful firmware fallback:** Old firmware receiving an unknown animation name from `parse_anim_name()` returns -1 — the animation stays unchanged. No crash, no visual glitch.
+**Firmware fallback (old firmware):** Old firmware receiving an unknown animation name from `parse_anim_name()` returns -1, and the session entry is **skipped** — the session will not be rendered (the crab disappears from the display). This means firmware must be updated before or alongside the daemon update. Deploy firmware first, then update the daemon to send new animation names.
