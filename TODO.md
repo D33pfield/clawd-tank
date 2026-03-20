@@ -1,17 +1,17 @@
 # Clawd Notification Display — TODO
 
-## Status (v1.3.0)
+## Status (v1.4.0)
 
 Firmware builds, flashes, and runs on the Waveshare ESP32-C6-LCD-1.47 board.
 BLE advertising works, notifications can be sent and dismissed via BLE GATT writes.
-23 C tests pass (with ASan+UBSan), 152 Python tests pass (11 test files).
+23 C tests pass (with ASan+UBSan), 220 Python tests pass (14 test files).
 Clawd sprite animations and notification card UI are implemented.
 NVS-backed config store supports brightness and session timeout with BLE read/write.
 macOS menu bar app provides daemon control, device configuration UI, and simulator toggle.
 Daemon supports multi-transport (BLE + TCP simulator) with dynamic add/remove at runtime.
 Simulator supports TCP listener (`--listen`) for daemon-driven operation without hardware.
-Session-aware working animations driven by Claude Code hooks with intensity tiers.
-14 animated sprites integrated into scene.c, auto-cropped to tight bounding boxes.
+Tool-aware working animations — 6 distinct Clawd animations based on Claude Code tool type.
+18 animated sprites integrated into scene.c, auto-cropped to tight bounding boxes.
 Multi-session display with up to 4 concurrent Clawd sprites (v2 protocol).
 Session state tracking in daemon with priority-based display state computation.
 Staleness eviction replaces timer-based sleep — sleep is now session-driven.

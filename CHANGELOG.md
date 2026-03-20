@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-20
+
+### Added
+
+- **Tool-aware animations** — Clawd now shows distinct animations based on which Claude Code tool is active, instead of the same "typing" animation for all tools. 6 tool categories mapped to animations:
+  - `Read` / `Grep` / `Glob` → **Debugger** (sneaking with magnifying glass)
+  - `Edit` / `Write` / `NotebookEdit` → **Typing** (at laptop, unchanged)
+  - `Bash` → **Building** (hard hat + hammer on anvil)
+  - `Agent` / subagents → **Conducting** (arms waving, data streaming overhead)
+  - `WebSearch` / `WebFetch` → **Wizard** (floating with wand + sparkles)
+  - `LSP` / MCP tools (`mcp__*`) → **Beacon** (antenna with radio waves)
+  - Unknown tools fall back to Typing.
+- **4 new sprite animations** — Debugger (86×43, 48 frames), Wizard (72×129, 48 frames), Conducting (76×78, 16 frames), Beacon (134×127, 64 frames). All at 8fps, generated via sprite pipeline with auto-crop.
+- **Narrow-view animation mirroring** — When the notification panel is open (narrow scene), idle and confused sessions adopt the most recent working session's tool animation instead of showing static idle/confused. If no sessions are working, the original animation is preserved.
+- **`record_gif.py` v2 support** — GIF recording tool now supports the 4 new animation names via v2 `set_sessions` path in the simulator's `--capture-anim` mode.
+- **Improved daemon logging** — Socket messages now log `tool_name` for tool calls, `agent_id` for subagent events, and project name (`[project-name]`) for all sessions. Display state broadcasts log animation names, subagent count, and overflow.
+- **Project name tracking** — Project name (from `cwd`) extracted for all hook events and stored on session state. Visible in logs and `sessions.json`.
+
+### Changed
+
+- **Subagent animation** — Sessions with active subagents now show the **Conducting** animation (arms waving with data stream) instead of Building. Building is now reserved for `Bash` tool use.
+- **V1 WORKING_ANIMS** — Legacy v1 `set_status` payload now counts all 6 tool animations as "working" for intensity tier computation (was only `typing` + `building`).
+
+### Fixed
+
+- **Overflow badge hidden in narrow view** — Badge canvas was aligned to screen top-right, placing it behind the notification panel. Now uses `lv_obj_align_to` relative to the scene container, so the badge follows the container edge in both narrow and wide views.
+
 ## [1.3.2] - 2026-03-18
 
 ### Fixed
