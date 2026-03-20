@@ -19,6 +19,7 @@
 - **`record_gif.py` v2 support** — GIF recording tool now supports the 4 new animation names via v2 `set_sessions` path in the simulator's `--capture-anim` mode.
 - **Improved daemon logging** — Socket messages now log `tool_name` for tool calls, `agent_id` for subagent events, and project name (`[project-name]`) for all sessions. Display state broadcasts log animation names, subagent count, and overflow.
 - **Project name tracking** — Project name (from `cwd`) extracted for all hook events and stored on session state. Visible in logs and `sessions.json`.
+- **BOOT button clears notifications** — Press the BOOT button (GPIO 9) on the ESP32-C6 board to dismiss all notification cards and return to full-width view. GPIO ISR with 200ms debounce.
 
 ### Changed
 
