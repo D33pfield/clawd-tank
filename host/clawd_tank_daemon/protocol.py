@@ -23,6 +23,7 @@ def hook_payload_to_daemon_message(hook: dict) -> Optional[dict]:
         return {
             "event": "tool_use",
             "session_id": session_id,
+            "tool_name": hook.get("tool_name", ""),
         }
 
     if event_name == "PreCompact":
@@ -152,7 +153,8 @@ def display_state_to_v1_payload(state: dict) -> str:
     """Convert display state dict to legacy v1 set_status payload."""
     if "status" in state:
         return json.dumps({"action": "set_status", "status": state["status"]})
-    working = sum(1 for a in state.get("anims", []) if a in ("typing", "building"))
+    WORKING_ANIMS = {"typing", "building", "debugger", "wizard", "conducting", "beacon"}
+    working = sum(1 for a in state.get("anims", []) if a in WORKING_ANIMS)
     if working > 0:
         status = f"working_{min(working, 3)}"
     elif "thinking" in state.get("anims", []):

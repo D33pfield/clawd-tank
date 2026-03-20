@@ -207,6 +207,27 @@ def test_pre_tool_use_produces_tool_use_event():
     assert msg["session_id"] == "sess-2"
 
 
+def test_pre_tool_use_preserves_tool_name():
+    hook = {
+        "hook_event_name": "PreToolUse",
+        "session_id": "sess-2",
+        "tool_name": "Bash",
+    }
+    msg = hook_payload_to_daemon_message(hook)
+    assert msg is not None
+    assert msg["tool_name"] == "Bash"
+
+
+def test_pre_tool_use_missing_tool_name_defaults_empty():
+    hook = {
+        "hook_event_name": "PreToolUse",
+        "session_id": "sess-2",
+    }
+    msg = hook_payload_to_daemon_message(hook)
+    assert msg is not None
+    assert msg["tool_name"] == ""
+
+
 def test_pre_compact_produces_compact_event():
     hook = {
         "hook_event_name": "PreCompact",
@@ -459,6 +480,27 @@ def test_stop_failure_stop_reason_fallback():
     }
     msg = hook_payload_to_daemon_message(hook)
     assert msg["message"] == "max_turns"
+
+
+def test_display_state_to_v1_debugger_counts_as_working():
+    state = {"anims": ["debugger"], "ids": [1], "subagents": 0}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "working_1"
+
+
+def test_display_state_to_v1_wizard_counts_as_working():
+    state = {"anims": ["wizard", "conducting"], "ids": [1, 2], "subagents": 0}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "working_2"
+
+
+def test_display_state_to_v1_beacon_counts_as_working():
+    state = {"anims": ["beacon"], "ids": [1], "subagents": 0}
+    payload = display_state_to_v1_payload(state)
+    parsed = json.loads(payload)
+    assert parsed["status"] == "working_1"
 
 
 def test_display_state_to_v1_dizzy_maps_to_confused():
