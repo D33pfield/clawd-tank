@@ -30,6 +30,10 @@
 #include "assets/sprite_sweeping.h"
 #include "assets/sprite_walking.h"
 #include "assets/sprite_going_away.h"
+#include "assets/sprite_debugger.h"
+#include "assets/sprite_wizard.h"
+#include "assets/sprite_conducting.h"
+#include "assets/sprite_beacon.h"
 #include "assets/sprite_mini_crab.h"
 #include "rle_sprite.h"
 #include "pixel_font.h"
@@ -57,6 +61,10 @@
 #define DIZZY_FRAME_MS     (1000 / 8)   /* 125ms @ 8fps */
 #define SWEEPING_FRAME_MS  (1000 / 8)   /* 125ms @ 8fps */
 #define GOING_AWAY_FRAME_MS (1000 / 8)  /* 125ms @ 8fps */
+#define DEBUGGER_FRAME_MS   (1000 / 8)  /* 125ms @ 8fps */
+#define WIZARD_FRAME_MS     (1000 / 8)  /* 125ms @ 8fps */
+#define CONDUCTING_FRAME_MS (1000 / 8)  /* 125ms @ 8fps */
+#define BEACON_FRAME_MS     (1000 / 8)  /* 125ms @ 8fps */
 
 /* ---------- Animation metadata ---------- */
 
@@ -211,6 +219,46 @@ static const anim_def_t anim_defs[] = {
         .width = GOING_AWAY_WIDTH,
         .height = GOING_AWAY_HEIGHT,
         .y_offset = -6,   /* 8 - 14 */
+    },
+    [CLAWD_ANIM_DEBUGGER] = {
+        .rle_data = debugger_rle_data,
+        .frame_offsets = debugger_frame_offsets,
+        .frame_count = DEBUGGER_FRAME_COUNT,
+        .frame_ms = DEBUGGER_FRAME_MS,
+        .looping = true,
+        .width = DEBUGGER_WIDTH,
+        .height = DEBUGGER_HEIGHT,
+        .y_offset = 7,   /* -8 + 15 (crop adjustment) */
+    },
+    [CLAWD_ANIM_WIZARD] = {
+        .rle_data = wizard_rle_data,
+        .frame_offsets = wizard_frame_offsets,
+        .frame_count = WIZARD_FRAME_COUNT,
+        .frame_ms = WIZARD_FRAME_MS,
+        .looping = true,
+        .width = WIZARD_WIDTH,
+        .height = WIZARD_HEIGHT,
+        .y_offset = 8,   /* -8 + 16 (crop adjustment) */
+    },
+    [CLAWD_ANIM_CONDUCTING] = {
+        .rle_data = conducting_rle_data,
+        .frame_offsets = conducting_frame_offsets,
+        .frame_count = CONDUCTING_FRAME_COUNT,
+        .frame_ms = CONDUCTING_FRAME_MS,
+        .looping = true,
+        .width = CONDUCTING_WIDTH,
+        .height = CONDUCTING_HEIGHT,
+        .y_offset = 6,   /* -8 + 14 (crop adjustment) */
+    },
+    [CLAWD_ANIM_BEACON] = {
+        .rle_data = beacon_rle_data,
+        .frame_offsets = beacon_frame_offsets,
+        .frame_count = BEACON_FRAME_COUNT,
+        .frame_ms = BEACON_FRAME_MS,
+        .looping = true,
+        .width = BEACON_WIDTH,
+        .height = BEACON_HEIGHT,
+        .y_offset = -8,   /* no crop adjustment */
     },
     [CLAWD_ANIM_MINI_CLAWD] = {
         .rle_data = mini_crab_rle_data,
