@@ -7,6 +7,7 @@
 ### Fixed
 
 - **Stale board clock after Mac sleep / manual Reconnect** — On macOS sleep, the BLE link silently dropped but bleak's `is_connected` stayed `True`, so the daemon never re-ran its post-connect sync and `set_time` was never re-sent. The menu bar **Reconnect** button had the same issue because it called `ensure_connected()` without first forcing a disconnect or running the post-connect sync. Fixed by: BLE client now clears its bleak client on any failed GATT op (mirrors the simulator TCP transport); `connect()` drops any existing client before scanning; the write-failure path always runs the full post-connect sync on reconnect; and `Daemon.reconnect()` force-disconnects each transport before reconnecting and always re-syncs time + state.
+- **Every Clawd flipped animation when a notification was dismissed** — Idle sessions were mirroring the most recent working session's tool animation whenever notifications were present. Dismissing a notification toggled that override off and broadcast a full `set_sessions` update, so every Clawd on screen snapped to a new animation at once. Each session now always reports its own true animation regardless of notification state.
 
 ## [1.4.0] - 2026-03-20
 
