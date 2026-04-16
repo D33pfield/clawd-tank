@@ -53,3 +53,15 @@ firmware/.cache/
 # Misc
 firebase-debug.log
 host/clawd_tank_menubar/_version_info.py
+.gitnexus
+
+# Claude Code local state
+.claude/
+
+# One-off / personal docs
+gifs/
+docs/master/
+docs/posts/
+docs/claude_hooks_integration_plan.md
+docs/hooks_reference.md
+assets/svg-animations/prompts/

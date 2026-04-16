@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clawd Tank - App Icon Mockups (Round 3)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+        }
+        h1 {
+            font-weight: 600;
+            margin-bottom: 40px;
+        }
+        .mockups-container {
+            display: flex;
+            gap: 60px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .mockup {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            width: 256px;
+        }
+        .icon-container {
+            width: 256px;
+            height: 256px;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.1)) drop-shadow(0 4px 6px rgba(0,0,0,0.05));
+        }
+        .mockup h2 {
+            font-size: 18px;
+            margin: 0 0 8px 0;
+            color: #1d1d1f;
+        }
+        .mockup p {
+            font-size: 14px;
+            color: #515154;
+            margin: 0;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Clawd Tank Main App Icon Concepts (Round 3)</h1>
+    
+    <div class="mockups-container">
+        
+        <!-- Mockup 1: The Notification Bubble -->
+        <div class="mockup">
+            <div class="icon-container">
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="bubble-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#FFFFFF" />
+                            <stop offset="100%" stop-color="#E5E5EA" />
+                        </linearGradient>
+                        <linearGradient id="bubble-shadow" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#000000" stop-opacity="0" />
+                            <stop offset="100%" stop-color="#000000" stop-opacity="0.1" />
+                        </linearGradient>
+                        <filter id="crab-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feDropShadow dx="0" dy="15" stdDeviation="15" flood-color="#DE886D" flood-opacity="0.4"/>
+                        </filter>
+                    </defs>
+                    
+                    <!-- Base macOS Squircle (Transparent/None for this one, as the bubble is the icon) -->
+                    <!-- Wait, macOS icons need to fill the squircle usually, or have a clear silhouette. 
+                         Let's put the bubble inside a soft colored squircle. -->
+                    <rect x="0" y="0" width="1024" height="1024" rx="230" fill="#F0F0F5" />
+                    
+                    <!-- Speech Bubble -->
+                    <path d="M 200 250 L 824 250 Q 874 250 874 300 L 874 700 Q 874 750 824 750 L 350 750 L 200 900 L 250 750 L 200 750 Q 150 750 150 700 L 150 300 Q 150 250 200 250 Z" fill="url(#bubble-grad)" filter="drop-shadow(0 20px 20px rgba(0,0,0,0.1))"/>
+                    <path d="M 200 250 L 824 250 Q 874 250 874 300 L 874 700 Q 874 750 824 750 L 350 750 L 200 900 L 250 750 L 200 750 Q 150 750 150 700 L 150 300 Q 150 250 200 250 Z" fill="url(#bubble-shadow)"/>
+                    
+                    <!-- Clawd Character inside bubble -->
+                    <g transform="translate(240, 300) scale(35)" filter="url(#crab-shadow)">
+                        <g fill="#DE886D">
+                            <rect x="2" y="6" width="11" height="7"/>
+                            <rect x="0" y="9" width="2" height="2"/>
+                            <rect x="13" y="9" width="2" height="2"/>
+                            <rect x="3" y="13" width="1" height="2"/>
+                            <rect x="5" y="13" width="1" height="2"/>
+                            <rect x="9" y="13" width="1" height="2"/>
+                            <rect x="11" y="13" width="1" height="2"/>
+                        </g>
+                        <g fill="#000000">
+                            <rect x="4" y="8" width="1" height="2"/>
+                            <rect x="10" y="8" width="1" height="2"/>
+                        </g>
+                    </g>
+                </svg>
+            </div>
+            <h2>The Notification Bubble</h2>
+            <p>Emphasizes the app's core function: notifications. A sleek macOS 3D speech bubble containing our pixel companion.</p>
+        </div>
+
+        <!-- Mockup 2: The Big Face (Minimalist) -->
+        <div class="mockup">
+            <div class="icon-container">
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="face-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#E89B83" />
+                            <stop offset="100%" stop-color="#D47355" />
+                        </linearGradient>
+                        <filter id="inner-glow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feGaussianBlur stdDeviation="15" result="blur" />
+                            <feComposite in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="shadowDiff" />
+                            <feFlood flood-color="white" flood-opacity="0.5" />
+                            <feComposite in2="shadowDiff" operator="in" />
+                            <feComposite in2="SourceGraphic" operator="over" />
+                        </filter>
+                    </defs>
+                    
+                    <!-- Base macOS Squircle acting as the Crab's face -->
+                    <rect x="0" y="0" width="1024" height="1024" rx="230" fill="url(#face-bg)" filter="url(#inner-glow)"/>
+                    
+                    <!-- Huge Pixel Eyes -->
+                    <g fill="#111111">
+                        <!-- Left Eye -->
+                        <rect x="250" y="350" width="120" height="240" rx="20"/>
+                        <!-- Right Eye -->
+                        <rect x="650" y="350" width="120" height="240" rx="20"/>
+                    </g>
+                    <!-- Eye Highlights (make it look less lifeless) -->
+                    <g fill="#FFFFFF">
+                        <rect x="270" y="380" width="40" height="60" rx="10"/>
+                        <rect x="670" y="380" width="40" height="60" rx="10"/>
+                    </g>
+                    
+                    <!-- Optional: Simple Claws poking in from the sides -->
+                    <path d="M -50 600 L 150 600 L 150 800 L -50 800 Z" fill="#C46044" rx="30"/>
+                    <path d="M 874 600 L 1074 600 L 1074 800 L 874 800 Z" fill="#C46044" rx="30"/>
+                    
+                    <rect x="0" y="0" width="1024" height="1024" rx="230" fill="none" stroke="#ffffff" stroke-opacity="0.3" stroke-width="8"/>
+                </svg>
+            </div>
+            <h2>The Big Face</h2>
+            <p>A bold, minimalist approach. The entire app icon becomes Clawd's face, styled with a modern 3D gradient and big friendly eyes.</p>
+        </div>
+
+        <!-- Mockup 3: Isometric / Voxel Style -->
+        <div class="mockup">
+            <div class="icon-container">
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="voxel-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#2D2D3D" />
+                            <stop offset="100%" stop-color="#1A1A24" />
+                        </linearGradient>
+                    </defs>
+                    
+                    <rect x="0" y="0" width="1024" height="1024" rx="230" fill="url(#voxel-bg)" />
+                    
+                    <!-- Simulating a 3D isometric grid base -->
+                    <g transform="translate(512, 650)">
+                        <!-- Pedestal Top -->
+                        <polygon points="0,-100 200,0 0,100 -200,0" fill="#3D3D52" />
+                        <!-- Pedestal Left -->
+                        <polygon points="-200,0 0,100 0,150 -200,50" fill="#242430" />
+                        <!-- Pedestal Right -->
+                        <polygon points="200,0 0,100 0,150 200,50" fill="#1A1A24" />
+                        
+                        <!-- Voxel Crab abstraction (Isometric blocks) -->
+                        <g transform="translate(0, -150)">
+                            <!-- Body Block -->
+                            <!-- Top -->
+                            <polygon points="0,-80 120,-20 0,40 -120,-20" fill="#F09B80" />
+                            <!-- Left -->
+                            <polygon points="-120,-20 0,40 0,100 -120,40" fill="#C46A4F" />
+                            <!-- Right -->
+                            <polygon points="120,-20 0,40 0,100 120,40" fill="#A8543B" />
+                            
+                            <!-- Left Eye Block -->
+                            <g transform="translate(-40, -40)">
+                                <polygon points="0,-30 30,-15 0,0 -30,-15" fill="#333" />
+                                <polygon points="-30,-15 0,0 0,40 -30,25" fill="#111" />
+                                <polygon points="30,-15 0,0 0,40 30,25" fill="#000" />
+                            </g>
+                            
+                            <!-- Right Eye Block -->
+                            <g transform="translate(40, -40)">
+                                <polygon points="0,-30 30,-15 0,0 -30,-15" fill="#333" />
+                                <polygon points="-30,-15 0,0 0,40 -30,25" fill="#111" />
+                                <polygon points="30,-15 0,0 0,40 30,25" fill="#000" />
+                            </g>
+                        </g>
+                    </g>
+                    
+                    <!-- Border Highlight -->
+                    <rect x="0" y="0" width="1024" height="1024" rx="230" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="4"/>
+                </svg>
+            </div>
+            <h2>The Voxel Pet</h2>
+            <p>Elevates the 2D pixel art into a 3D isometric "voxel" model. Sits on a pedestal like a digital desktop toy or collectable.</p>
+        </div>
+        
+    </div>
+
+</body>
+</html>
