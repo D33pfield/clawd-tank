@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
-from .ble_client import ClawdBleClient
 from .protocol import (
     ASK_USER_QUESTION_TOOL,
     daemon_message_to_ble_payload,
@@ -131,6 +130,9 @@ class ClawdDaemon:
         if headless:
             # Headless (CLI) mode — create transports from args
             if not sim_only:
+                # Imported lazily so simulator-only setups (e.g. Linux) don't need bleak.
+                from .ble_client import ClawdBleClient
+
                 ble = ClawdBleClient(
                     on_disconnect_cb=lambda: self._on_transport_disconnect("ble"),
                     on_connect_cb=lambda: self._on_transport_connect("ble"),
