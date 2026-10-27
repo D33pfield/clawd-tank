@@ -198,6 +198,72 @@ Clawd's animation reflects which tool Claude is currently using. Each session ge
 | **Sleeping** | No active sessions — all sessions ended or evicted | ![Sleeping](assets/sim-recordings/clawd-sleeping.gif) |
 | **Disconnected** | No BLE connection — "No connection" message | ![Disconnected](assets/sim-recordings/clawd-disconnected.gif) |
 
+## Animation Gallery
+
+Every Clawd animation, without the scene background. Previews are rendered from the SVG sources in [`assets/svg-animations/`](assets/svg-animations/) with `python tools/svg2slack_emoji.py` (transparent GIFs, max 128px).
+
+### On the device (19)
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-idle-living.gif" alt="Idle" height="96"><br><b>Idle</b><br><sub>Connected and idle: a session finished its turn, no notifications pending</sub><br><sub><a href="assets/svg-animations/clawd-idle-living.svg"><code>clawd-idle-living.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-notification.gif" alt="Alert" height="96"><br><b>Alert</b><br><sub>New notification card, or Claude is waiting on you (<code>AskUserQuestion</code> / permission prompt)</sub><br><sub><a href="assets/svg-animations/clawd-notification.svg"><code>clawd-notification.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-happy.gif" alt="Happy" height="96"><br><b>Happy</b><br><sub>Notifications dismissed (oneshot)</sub><br><sub><a href="assets/svg-animations/clawd-happy.svg"><code>clawd-happy.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-sleeping.gif" alt="Sleeping" height="96"><br><b>Sleeping</b><br><sub>No active sessions</sub><br><sub><a href="assets/svg-animations/clawd-sleeping.svg"><code>clawd-sleeping.svg</code></a></sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-disconnected.gif" alt="Disconnected" height="96"><br><b>Disconnected</b><br><sub>No connection to the host</sub><br><sub><a href="assets/svg-animations/clawd-disconnected.svg"><code>clawd-disconnected.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-thinking.gif" alt="Thinking" height="96"><br><b>Thinking</b><br><sub>Prompt submitted, Claude is reasoning</sub><br><sub><a href="assets/svg-animations/clawd-working-thinking.svg"><code>clawd-working-thinking.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-typing.gif" alt="Typing" height="96"><br><b>Typing</b><br><sub><code>Edit</code>, <code>Write</code>, <code>NotebookEdit</code> and unmapped tools · 1 working session on v1</sub><br><sub><a href="assets/svg-animations/clawd-working-typing.svg"><code>clawd-working-typing.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-debugger.gif" alt="Debugger" height="96"><br><b>Debugger</b><br><sub><code>Read</code>, <code>Grep</code>, <code>Glob</code></sub><br><sub><a href="assets/svg-animations/clawd-working-debugger.svg"><code>clawd-working-debugger.svg</code></a></sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-building.gif" alt="Building" height="96"><br><b>Building</b><br><sub><code>Bash</code> · 3+ working sessions on v1</sub><br><sub><a href="assets/svg-animations/clawd-working-building.svg"><code>clawd-working-building.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-wizard.gif" alt="Wizard" height="96"><br><b>Wizard</b><br><sub><code>WebSearch</code>, <code>WebFetch</code></sub><br><sub><a href="assets/svg-animations/clawd-working-wizard.svg"><code>clawd-working-wizard.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-conducting.gif" alt="Conducting" height="96"><br><b>Conducting</b><br><sub><code>Agent</code> / active subagents</sub><br><sub><a href="assets/svg-animations/clawd-working-conducting.svg"><code>clawd-working-conducting.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-beacon.gif" alt="Beacon" height="96"><br><b>Beacon</b><br><sub><code>LSP</code> and MCP tools (<code>mcp__*</code>)</sub><br><sub><a href="assets/svg-animations/clawd-working-beacon.svg"><code>clawd-working-beacon.svg</code></a></sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-juggling.gif" alt="Juggling" height="96"><br><b>Juggling</b><br><sub>2 working sessions on v1 (single-sprite) devices</sub><br><sub><a href="assets/svg-animations/clawd-working-juggling.svg"><code>clawd-working-juggling.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-confused.gif" alt="Confused" height="96"><br><b>Confused</b><br><sub>Waiting 60s+ for input, or a tool call failed</sub><br><sub><a href="assets/svg-animations/clawd-working-confused.svg"><code>clawd-working-confused.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-dizzy.gif" alt="Dizzy" height="96"><br><b>Dizzy</b><br><sub>API error (<code>StopFailure</code>) · triple red LED flash</sub><br><sub><a href="assets/svg-animations/clawd-dizzy.svg"><code>clawd-dizzy.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-sweeping.gif" alt="Sweeping" height="96"><br><b>Sweeping</b><br><sub>Context compaction (<code>PreCompact</code>, oneshot)</sub><br><sub><a href="assets/svg-animations/clawd-working-sweeping.svg"><code>clawd-working-sweeping.svg</code></a></sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-crab-walking.gif" alt="Walking" height="96"><br><b>Walking</b><br><sub>New session walks in; sessions reposition after one leaves</sub><br><sub><a href="assets/svg-animations/clawd-crab-walking.svg"><code>clawd-crab-walking.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-going-away.gif" alt="Going Away" height="96"><br><b>Going Away</b><br><sub>Session ended, Clawd burrows away (oneshot)</sub><br><sub><a href="assets/svg-animations/clawd-going-away.svg"><code>clawd-going-away.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-mini-clawd.gif" alt="Mini Clawd" height="96"><br><b>Mini Clawd</b><br><sub>HUD subagent counter icon</sub><br><sub><a href="assets/svg-animations/clawd-mini-clawd.svg"><code>clawd-mini-clawd.svg</code></a></sub></td>
+  </tr>
+</table>
+
+### Extra animations (13)
+
+Drawn but not used by the firmware yet.
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-coffee-head-flip.gif" alt="Coffee Head Flip" height="96"><br><b>Coffee Head Flip</b><br><sub>Flips a coffee cup onto its head</sub><br><sub><a href="assets/svg-animations/clawd-coffee-head-flip.svg"><code>clawd-coffee-head-flip.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-eureka.gif" alt="Eureka" height="96"><br><b>Eureka</b><br><sub>Lightbulb moment</sub><br><sub><a href="assets/svg-animations/clawd-eureka.svg"><code>clawd-eureka.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-grooving.gif" alt="Grooving" height="96"><br><b>Grooving</b><br><sub>Vibing with headphones</sub><br><sub><a href="assets/svg-animations/clawd-grooving.svg"><code>clawd-grooving.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-hat-mishap.gif" alt="Hat Mishap" height="96"><br><b>Hat Mishap</b><br><sub>Wizard hat slips over its eyes</sub><br><sub><a href="assets/svg-animations/clawd-hat-mishap.svg"><code>clawd-hat-mishap.svg</code></a></sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-idle-low-battery.gif" alt="Low Battery" height="96"><br><b>Low Battery</b><br><sub>Drowsy, battery running out</sub><br><sub><a href="assets/svg-animations/clawd-idle-low-battery.svg"><code>clawd-idle-low-battery.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-wake.gif" alt="Wake" height="96"><br><b>Wake</b><br><sub>Waking up</sub><br><sub><a href="assets/svg-animations/clawd-wake.svg"><code>clawd-wake.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-builder.gif" alt="Builder" height="96"><br><b>Builder</b><br><sub>Stacking blocks</sub><br><sub><a href="assets/svg-animations/clawd-working-builder.svg"><code>clawd-working-builder.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-carrying.gif" alt="Carrying" height="96"><br><b>Carrying</b><br><sub>Hauling a box overhead</sub><br><sub><a href="assets/svg-animations/clawd-working-carrying.svg"><code>clawd-working-carrying.svg</code></a></sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-overheated.gif" alt="Overheated" height="96"><br><b>Overheated</b><br><sub>Splooted and smoking</sub><br><sub><a href="assets/svg-animations/clawd-working-overheated.svg"><code>clawd-working-overheated.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-pushing.gif" alt="Pushing" height="96"><br><b>Pushing</b><br><sub>Pushing a heavy block</sub><br><sub><a href="assets/svg-animations/clawd-working-pushing.svg"><code>clawd-working-pushing.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-working-ultra-thinking.gif" alt="Ultrathink" height="96"><br><b>Ultrathink</b><br><sub>Thinking really hard</sub><br><sub><a href="assets/svg-animations/clawd-working-ultra-thinking.svg"><code>clawd-working-ultra-thinking.svg</code></a></sub></td>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/mini-crab-typing.gif" alt="Mini Crab Typing" height="96"><br><b>Mini Crab Typing</b><br><sub>Tiny crab typing away</sub><br><sub><a href="assets/svg-animations/mini-crab-typing.svg"><code>mini-crab-typing.svg</code></a></sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><img src="assets/slack-emojis/clawd-static-base.gif" alt="Static Base" height="96"><br><b>Static Base</b><br><sub>The base pose every animation starts from</sub><br><sub><a href="assets/svg-animations/clawd-static-base.svg"><code>clawd-static-base.svg</code></a></sub></td>
+  </tr>
+</table>
+
 ## Tests
 
 ```bash
