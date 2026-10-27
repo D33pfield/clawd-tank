@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 #include <stdlib.h>
 
 static int parse_anim_name(const char *str) {

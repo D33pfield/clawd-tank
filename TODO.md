@@ -24,6 +24,15 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
 
 ---
 
+## Platform-neutral fixes from the Linux port (PR #19) — Complete
+
+- [x] **`--sim-only` without `bleak`** — `daemon.py` imports `ClawdBleClient` lazily (only when a
+  BLE transport is created), matching `app.py`, so simulator-only setups don't need `bleak`.
+- [x] **`<time.h>` in `sim_ble_parse.c`** — declares `tzset()`; removes an implicit-declaration
+  warning on Linux.
+- The Linux installer/systemd/docs themselves were not merged; they're maintained in the
+  contributor's fork, [VloStudios/clawd-tank-linux](https://github.com/VloStudios/clawd-tank-linux).
+
 ## Code-review hardening (attention-hooks branch) — Complete
 
 Multi-agent review of the attention-hooks work surfaced 15 findings; fixes:
