@@ -24,6 +24,15 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
 
 ---
 
+## README Animation Gallery — Complete
+
+- [x] **Exhaustive animation gallery** — README lists all 19 on-device animations (with their
+  triggers) and the 13 extra SVG-only animations, each with a transparent-background preview
+  from `tools/svg2slack_emoji.py` (`assets/slack-emojis/`). Rendered the 8 previews that were
+  missing (the PR #10/#11 animations). Re-run the tool when adding an SVG.
+- [x] **Removed GitNexus** — dropped the GitNexus section from `CLAUDE.md` and its `.gitignore`
+  entries; deleted the local `.gitnexus/` index.
+
 ## Platform-neutral fixes from the Linux port (PR #19) — Complete
 
 - [x] **`--sim-only` without `bleak`** — `daemon.py` imports `ClawdBleClient` lazily (only when a
