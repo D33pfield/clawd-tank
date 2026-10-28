@@ -226,6 +226,15 @@ static int config_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         char buf[512];
         uint16_t len = config_store_serialize_json(buf, sizeof(buf));
+        /* Full-speed USB Bluetooth adapters (64-byte bulk endpoints, also seen
+         * through usbipd) stall on an ACL packet that is an exact multiple of
+         * 64 bytes: the read response never reaches the host and the link dies
+         * after the 30 s ATT timeout. The packet is 4 (HCI) + 4 (L2CAP) + 1
+         * (ATT opcode) + len bytes, so pad with a space, which JSON ignores. */
+        if (len > 0 && len + 1 < sizeof(buf) && (len + 9) % 64 == 0) {
+            buf[len++] = ' ';
+            buf[len] = '\0';
+        }
         int rc = os_mbuf_append(ctxt->om, buf, len);
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
