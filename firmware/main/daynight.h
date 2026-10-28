@@ -30,8 +30,9 @@ typedef struct {
  * Blends smoothly between night, dawn (ending at sunrise), day, dusk (at sunset)
  * and night. Out-of-range minutes wrap. `sun` may be NULL for the defaults;
  * invalid values (sunrise not before sunset, or outside 0-1440) also fall back
- * to them. Odd but valid values (very short or very long days) are squeezed so
- * the timeline always stays ordered. */
+ * to them. A sunrise before 01:30 or a sunset after 22:00 is treated as 01:30 /
+ * 22:00 so each fade fits inside one day (midnight-sun days would otherwise snap
+ * at midnight). Very short days are squeezed so the timeline always stays ordered. */
 void daynight_palette(int minute_of_day, const daynight_sun_t *sun, daynight_palette_t *out);
 
 /* The fixed night look (the scene's original palette), used when the day/night

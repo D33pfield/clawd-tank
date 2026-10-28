@@ -194,12 +194,44 @@ static void test_custom_sun_times_move_the_anchors(void)
 
 static void test_smooth_for_realistic_days(void)
 {
-    /* Every plausible sunrise/sunset pair keeps the fades smooth. */
-    for (int rise = HM(3, 0); rise <= HM(9, 0); rise += 30) {
-        for (int set = HM(15, 30); set <= HM(22, 0); set += 30) {
+    /* Every plausible sunrise/sunset pair keeps the fades smooth, including
+     * midnight-sun days whose sun times sit right at the edges of the day
+     * (sunrise near 00:00, sunset at 24:00): those used to snap at midnight. */
+    for (int rise = 0; rise <= HM(9, 0); rise += 30) {
+        for (int set = HM(15, 30); set <= HM(24, 0); set += 30) {
             daynight_sun_t sun = { rise, set };
             assert_smooth_all_day(&sun);
         }
+    }
+}
+
+static void test_midnight_sun_days_do_not_snap(void)
+{
+    /* What the host really produces for high latitudes in midsummer: Reykjavik
+     * (174, 1440), Svalbard's clamped day (89, 1440), Anchorage (260, 1422). */
+    daynight_sun_t days[] = { { 174, 1440 }, { 89, 1440 }, { 260, 1422 }, { 0, 1440 } };
+    for (size_t i = 0; i < sizeof(days) / sizeof(days[0]); i++) {
+        assert_smooth_all_day(&days[i]);
+    }
+
+    /* The extremes are pulled in to 01:30 / 22:00, so the fade lands where it
+     * would for those clock times. */
+    daynight_sun_t late = { 174, 1440 }, clamped = { 174, 1320 };
+    for (int m = 0; m < 1440; m += 10) {
+        daynight_palette_t a, b;
+        daynight_palette(m, &late, &a);
+        daynight_palette(m, &clamped, &b);
+        assert(a.sky_top == b.sky_top && a.sky_bottom == b.sky_bottom);
+    }
+
+    /* A valid pair that clamping would invert (sunrise 23:20, sunset 24:00) is
+     * treated as nonsense and falls back to the defaults. */
+    daynight_sun_t odd = { 1400, 1440 };
+    for (int m = 0; m < 1440; m += 10) {
+        daynight_palette_t a, b;
+        daynight_palette(m, &odd, &a);
+        daynight_palette(m, NULL, &b);
+        assert(a.sky_top == b.sky_top && a.sky_bottom == b.sky_bottom);
     }
 }
 
@@ -241,6 +273,7 @@ int main(void)
     test_default_sun_times();
     test_custom_sun_times_move_the_anchors();
     test_smooth_for_realistic_days();
+    test_midnight_sun_days_do_not_snap();
     test_robust_for_any_sun_times();
     printf("test_daynight: all tests passed\n");
     return 0;
