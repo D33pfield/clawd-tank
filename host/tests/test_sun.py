@@ -25,9 +25,9 @@ def hm(minutes: int) -> str:
 
 @pytest.fixture(autouse=True)
 def _fresh_cache():
-    sun._host_coordinates.cache_clear()
+    sun._coordinates_for_zone.cache_clear()
     yield
-    sun._host_coordinates.cache_clear()
+    sun._coordinates_for_zone.cache_clear()
 
 
 @pytest.fixture
@@ -168,3 +168,35 @@ def test_todays_sun_times_uses_the_host_zone(monkeypatch):
     monkeypatch.setattr(sun, "_local_utc_offset_minutes", lambda day: -300)
     result = sun.todays_sun_times(date(2026, 6, 21))
     assert result == sun.sun_times(*CHICAGO, date(2026, 6, 21), -300)
+
+
+def test_follows_a_timezone_change_while_running(monkeypatch):
+    """A laptop that changes timezone must not stay on the first city it saw."""
+    coords = {"America/Chicago": CHICAGO, "Australia/Sydney": SYDNEY}
+    zone = {"name": "America/Chicago"}
+    monkeypatch.setattr(sun, "local_zone_name", lambda: zone["name"])
+    monkeypatch.setattr(sun, "zone_coordinates", lambda name: coords.get(name))
+    monkeypatch.setattr(sun, "_local_utc_offset_minutes", lambda day: 0)
+
+    day = date(2026, 6, 21)
+    first = sun.todays_sun_times(day)
+    assert first == sun.sun_times(*CHICAGO, day, 0)
+
+    zone["name"] = "Australia/Sydney"  # the host moved
+    assert sun.todays_sun_times(day) == sun.sun_times(*SYDNEY, day, 0)
+    assert sun.todays_sun_times(day) != first
+
+
+def test_zone_lookup_is_cached_per_zone(monkeypatch):
+    calls = []
+
+    def lookup(name):
+        calls.append(name)
+        return CHICAGO
+
+    monkeypatch.setattr(sun, "local_zone_name", lambda: "America/Chicago")
+    monkeypatch.setattr(sun, "zone_coordinates", lookup)
+    monkeypatch.setattr(sun, "_local_utc_offset_minutes", lambda day: -300)
+    for _ in range(5):
+        sun.todays_sun_times(date(2026, 6, 21))
+    assert calls == ["America/Chicago"]  # zone.tab read once, not on every sync
