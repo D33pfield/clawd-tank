@@ -117,7 +117,7 @@ static void handle_config_action(const char *buf, uint16_t len, int client_fd) {
     if (!action || !cJSON_IsString(action)) { cJSON_Delete(json); return; }
 
     if (strcmp(action->valuestring, "read_config") == 0) {
-        char config_buf[128];
+        char config_buf[256];
         uint16_t config_len = config_store_serialize_json(config_buf, sizeof(config_buf));
         if (config_len > 0) {
             send(client_fd, config_buf, config_len, 0);
@@ -125,16 +125,7 @@ static void handle_config_action(const char *buf, uint16_t len, int client_fd) {
             printf("[tcp] Config read: %s\n", config_buf);
         }
     } else if (strcmp(action->valuestring, "write_config") == 0) {
-        cJSON *brightness = cJSON_GetObjectItem(json, "brightness");
-        if (brightness && cJSON_IsNumber(brightness)) {
-            config_store_set_brightness((uint8_t)brightness->valueint);
-            printf("[tcp] Config: brightness=%d\n", brightness->valueint);
-        }
-        cJSON *sleep_t = cJSON_GetObjectItem(json, "sleep_timeout");
-        if (sleep_t && cJSON_IsNumber(sleep_t)) {
-            config_store_set_sleep_timeout((uint16_t)sleep_t->valueint);
-            printf("[tcp] Config: sleep_timeout=%d (daemon-driven, stored only)\n", sleep_t->valueint);
-        }
+        sim_apply_config(json, "tcp");
     }
 
     cJSON_Delete(json);

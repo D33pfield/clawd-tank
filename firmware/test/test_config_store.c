@@ -16,12 +16,16 @@ static uint8_t  mock_brightness = 0;
 static uint16_t mock_sleep_timeout = 0;
 static int mock_brightness_set = 0;
 static int mock_sleep_timeout_set = 0;
+static uint8_t mock_day_night = 0;
+static int mock_day_night_set = 0;
 
 static void mock_nvs_reset(void) {
     mock_brightness = 0;
     mock_sleep_timeout = 0;
     mock_brightness_set = 0;
     mock_sleep_timeout_set = 0;
+    mock_day_night = 0;
+    mock_day_night_set = 0;
 }
 
 esp_err_t nvs_open(const char *ns, int mode, nvs_handle_t *handle) {
@@ -34,6 +38,10 @@ esp_err_t nvs_get_u8(nvs_handle_t h, const char *key, uint8_t *val) {
     (void)h;
     if (strcmp(key, "brightness") == 0 && mock_brightness_set) {
         *val = mock_brightness;
+        return ESP_OK;
+    }
+    if (strcmp(key, "day_night") == 0 && mock_day_night_set) {
+        *val = mock_day_night;
         return ESP_OK;
     }
     return ESP_ERR_NVS_NOT_FOUND;
@@ -53,6 +61,10 @@ esp_err_t nvs_set_u8(nvs_handle_t h, const char *key, uint8_t val) {
     if (strcmp(key, "brightness") == 0) {
         mock_brightness = val;
         mock_brightness_set = 1;
+    }
+    if (strcmp(key, "day_night") == 0) {
+        mock_day_night = val;
+        mock_day_night_set = 1;
     }
     return ESP_OK;
 }
@@ -143,6 +155,40 @@ static void test_serialize_json_default_values(void) {
     printf("  PASS: test_serialize_json_default_values\n");
 }
 
+static void test_day_night_defaults_off(void) {
+    mock_nvs_reset();
+    config_store_init();
+    assert(config_store_get_day_night() == false);
+
+    char buf[256];
+    config_store_serialize_json(buf, sizeof(buf));
+    assert(strstr(buf, "\"day_night\":false") != NULL);
+    printf("  PASS: test_day_night_defaults_off\n");
+}
+
+static void test_day_night_persists_and_reloads(void) {
+    mock_nvs_reset();
+    config_store_init();
+    config_store_set_day_night(true);
+    assert(config_store_get_day_night() == true);
+    assert(mock_day_night == 1);
+    assert(mock_day_night_set == 1);
+
+    char buf[256];
+    config_store_serialize_json(buf, sizeof(buf));
+    assert(strstr(buf, "\"day_night\":true") != NULL);
+
+    // A fresh boot reads it back from NVS.
+    config_store_init();
+    assert(config_store_get_day_night() == true);
+
+    config_store_set_day_night(false);
+    assert(mock_day_night == 0);
+    config_store_init();
+    assert(config_store_get_day_night() == false);
+    printf("  PASS: test_day_night_persists_and_reloads\n");
+}
+
 static void test_serialize_json_small_buffer(void) {
     mock_nvs_reset();
     config_store_init();
@@ -162,6 +208,8 @@ int main(void) {
     test_set_sleep_timeout_persists();
     test_serialize_json();
     test_serialize_json_default_values();
+    test_day_night_defaults_off();
+    test_day_night_persists_and_reloads();
     test_serialize_json_small_buffer();
     printf("All config store tests passed!\n");
     return 0;
