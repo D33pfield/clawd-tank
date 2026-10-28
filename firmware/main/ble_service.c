@@ -131,6 +131,7 @@ static void parse_notification_json(const char *buf, uint16_t len) {
         if (epoch && cJSON_IsNumber(epoch)) {
             struct timeval tv = { .tv_sec = (time_t)epoch->valuedouble, .tv_usec = 0 };
             settimeofday(&tv, NULL);
+            ui_manager_time_synced();
             ESP_LOGI(TAG, "System time set to epoch %lld", (long long)tv.tv_sec);
         }
         cJSON *tz = cJSON_GetObjectItem(json, "tz");
