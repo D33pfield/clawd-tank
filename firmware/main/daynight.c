@@ -33,8 +33,17 @@ static void build_keys(const daynight_sun_t *sun, keyframe_t keys[KEY_COUNT])
     int set = DAYNIGHT_DEFAULT_SUNSET;
     if (sun && sun->sunrise_min >= 0 && sun->sunrise_min < sun->sunset_min &&
         sun->sunset_min <= MINUTES_PER_DAY) {
-        rise = sun->sunrise_min;
-        set = sun->sunset_min;
+        /* Keep the dawn lead-in and the night fade inside one day. A sunrise in
+         * the small hours or a sunset at midnight (midnight sun, e.g. Reykjavik
+         * in June) would otherwise squeeze a whole fade into a minute and snap
+         * the sky, so treat them as 01:30 / 22:00 at the extremes. */
+        int r = sun->sunrise_min < DAWN_LEAD ? DAWN_LEAD : sun->sunrise_min;
+        int s = sun->sunset_min > MINUTES_PER_DAY - NIGHT_RAMP ? MINUTES_PER_DAY - NIGHT_RAMP
+                                                               : sun->sunset_min;
+        if (r < s) {
+            rise = r;
+            set = s;
+        }
     }
 
     keys[0] = (keyframe_t){ 0,                &k_night };
