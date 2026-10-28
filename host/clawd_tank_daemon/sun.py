@@ -147,18 +147,29 @@ def _local_utc_offset_minutes(day: date) -> int:
     return int(offset.total_seconds() // 60) if offset is not None else 0
 
 
-@lru_cache(maxsize=1)
-def _host_coordinates() -> Optional[Tuple[float, float]]:
-    zone = local_zone_name()
-    if zone is None:
-        logger.info("Sun times unavailable: could not determine the local timezone name")
-        return None
+@lru_cache(maxsize=32)
+def _coordinates_for_zone(zone: str) -> Optional[Tuple[float, float]]:
+    """Cached zone.tab lookup (the file is only read once per zone)."""
     coords = zone_coordinates(zone)
     if coords is None:
         logger.info("Sun times unavailable: no coordinates for timezone %s", zone)
         return None
     logger.info("Sun times use %s (lat %.2f, lon %.2f)", zone, coords[0], coords[1])
     return coords
+
+
+def _host_coordinates() -> Optional[Tuple[float, float]]:
+    """Coordinates for the host's current timezone.
+
+    The zone name is re-read on every call (a symlink lookup) and only the zone ->
+    coordinates step is cached, so a laptop that changes timezone while the daemon
+    runs follows it instead of staying on the first city it saw.
+    """
+    zone = local_zone_name()
+    if zone is None:
+        logger.info("Sun times unavailable: could not determine the local timezone name")
+        return None
+    return _coordinates_for_zone(zone)
 
 
 def todays_sun_times(today: Optional[date] = None) -> Optional[Tuple[int, int]]:
