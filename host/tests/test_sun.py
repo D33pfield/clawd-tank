@@ -1,5 +1,6 @@
 """Tests for clawd_tank_daemon.sun (sunrise/sunset from the host's timezone)."""
 
+import os
 from datetime import date
 
 import pytest
@@ -200,3 +201,92 @@ def test_zone_lookup_is_cached_per_zone(monkeypatch):
     for _ in range(5):
         sun.todays_sun_times(date(2026, 6, 21))
     assert calls == ["America/Chicago"]  # zone.tab read once, not on every sync
+
+
+# --- zone name edge cases ----------------------------------------------------
+
+
+def test_local_zone_name_accepts_paths_and_alternate_trees(tmp_path):
+    none = str(tmp_path / "missing")
+    for tz, expected in {
+        ":/usr/share/zoneinfo/Asia/Tokyo": "Asia/Tokyo",
+        "/usr/share/zoneinfo/Asia/Tokyo": "Asia/Tokyo",
+        "posix/America/Chicago": "America/Chicago",
+        ":right/Europe/Paris": "Europe/Paris",
+        "/var/db/timezone/zoneinfo/America/Denver": "America/Denver",
+    }.items():
+        assert sun.local_zone_name({"TZ": tz}, none, none) == expected, tz
+
+
+def test_explicit_tz_that_is_not_a_place_does_not_fall_back_to_localtime(tmp_path):
+    # /etc/localtime says Chicago, but TZ overrides it, so UTC / POSIX strings must
+    # not borrow Chicago's coordinates for a clock that is really on another offset.
+    zone_file = tmp_path / "zoneinfo" / "America" / "Chicago"
+    zone_file.parent.mkdir(parents=True)
+    zone_file.write_bytes(b"TZif")
+    link = tmp_path / "localtime"
+    link.symlink_to(zone_file)
+    missing = str(tmp_path / "missing")
+
+    assert sun.local_zone_name({}, str(link), missing) == "America/Chicago"
+    assert sun.local_zone_name({"TZ": ""}, str(link), missing) == "America/Chicago"  # empty = unset
+    for tz in ("UTC", "EST5EDT", "UTC+5", "CST6CDT,M3.2.0,M11.1.0"):
+        assert sun.local_zone_name({"TZ": tz}, str(link), missing) is None, tz
+
+
+@pytest.fixture
+def zoneinfo_tree(tmp_path):
+    """A tiny zoneinfo tree: America/Chicago (listed in zone.tab), a symlink alias,
+    a hard-link alias, and an unrelated zone with identical bytes (a copy)."""
+    root = tmp_path / "zoneinfo"
+    (root / "America").mkdir(parents=True)
+    (root / "US").mkdir()
+    (root / "Etc").mkdir()
+    chicago = root / "America" / "Chicago"
+    chicago.write_bytes(b"TZif-chicago-rules")
+    (root / "US" / "Eastern").symlink_to(root / "America" / "Chicago")  # symlink alias
+    (root / "US" / "Central").hardlink_to(chicago)                      # hard-link alias
+    (root / "Etc" / "Lookalike").write_bytes(b"TZif-chicago-rules")     # same bytes, a copy
+    (root / "America" / "Denver").write_bytes(b"TZif-denver")
+    tab = root / "zone.tab"
+    tab.write_text(
+        "US\t+415100-0873900\tAmerica/Chicago\tCentral\n"
+        "US\t+394421-1045903\tAmerica/Denver\tMountain\n",
+        encoding="utf-8",
+    )
+    return str(root), str(tab)
+
+
+def test_resolve_zone_alias_follows_symlinks_and_hard_links(zoneinfo_tree):
+    root, tab = zoneinfo_tree
+    assert sun.resolve_zone_alias("US/Eastern", [tab], [root]) == "America/Chicago"  # symlink
+    assert sun.resolve_zone_alias("US/Central", [tab], [root]) == "America/Chicago"  # hard link
+
+
+def test_resolve_zone_alias_ignores_lookalikes_and_unknowns(zoneinfo_tree):
+    root, tab = zoneinfo_tree
+    # Identical bytes are not a link: it could be a different city's zone.
+    assert sun.resolve_zone_alias("Etc/Lookalike", [tab], [root]) is None
+    assert sun.resolve_zone_alias("Nowhere/Land", [tab], [root]) is None
+    # A name zone.tab already lists is not an alias of anything.
+    assert sun.resolve_zone_alias("America/Denver", [tab], [root]) is None
+
+
+def test_alias_zone_gets_sun_times(monkeypatch):
+    # zone.tab lists America/Chicago only; the host reports its alias US/Central.
+    monkeypatch.setattr(sun, "local_zone_name", lambda: "US/Central")
+    monkeypatch.setattr(sun, "zone_coordinates",
+                        lambda name: CHICAGO if name == "America/Chicago" else None)
+    monkeypatch.setattr(sun, "resolve_zone_alias", lambda name: "America/Chicago")
+    monkeypatch.setattr(sun, "_local_utc_offset_minutes", lambda day: -300)
+    result = sun.todays_sun_times(date(2026, 6, 21))
+    assert result == sun.sun_times(*CHICAGO, date(2026, 6, 21), -300)
+
+
+@pytest.mark.skipif(
+    not (os.path.exists("/usr/share/zoneinfo/US/Central")
+         and os.path.exists("/usr/share/zoneinfo/zone.tab")),
+    reason="needs the system zoneinfo tree with the US/Central alias",
+)
+def test_real_system_alias_resolves():
+    assert sun.resolve_zone_alias("US/Central") == "America/Chicago"
