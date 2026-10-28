@@ -43,15 +43,27 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
   (e.g. `idf.py -B build-daylight -DCMAKE_C_FLAGS=-DDAYNIGHT_FORCE_MINUTE=720 build`).
 - [x] Fixed `make test`: the `esp_log.h` test stub dropped the `TAG` argument, so newer GCC failed
   `config_store.c` with `-Werror=unused-variable`.
-- [ ] Follow-ups: seasonal sunrise/sunset times; make the schedule configurable over BLE.
+- [x] **Seasonal sunrise/sunset** — dawn and dusk now follow the real sun. The host computes today's
+  sunrise/sunset (`host/clawd_tank_daemon/sun.py`) from its own IANA timezone — the coordinates of the
+  zone's representative city in `zone.tab`, NOAA solar equations, DST-aware — and adds optional
+  `sunrise`/`sunset` (local minutes) to `set_time`. No location setting, nothing stored on the board
+  (RAM only); absent/invalid values mean the default 06:30 / 18:30. Cross-checked against `astral` for 7 cities
+  x 6 dates: within 5 minutes. Simulator: `sun <sunrise_min> <sunset_min>` event.
+- [ ] Follow-ups: optional latitude/longitude override for places far from their zone's main city;
+  make the fade lengths configurable.
 - [x] **BLE read workaround** — a config read whose ATT response made an ACL packet of exactly 64 bytes
   (value length 55, e.g. `day_night` on with the default brightness/sleep values) never reached the host
   on a full-speed USB Bluetooth adapter (64-byte bulk endpoints, here through usbipd): the read hung until
   the 30 s ATT timeout and the link dropped. The firmware's callback was fine (verified via serial log).
   `config_access_cb` now pads such responses with a trailing space. Found by sweeping JSON lengths
   51–57; only 55 hung.
-- Known limitation: the daemon sends a fixed UTC offset (no DST rules) with `set_time`, so the clock —
-  and therefore the sky — is off by an hour after a DST change until the next BLE reconnect.
+- [x] **Daily time resync** — the daemon re-sends `set_time` (clock, timezone, sun times) to every connected
+  transport once a day at 03:00 local, in addition to on every connect, so a long-lived BLE link no longer
+  leaves the clock or sun times stale (sunrise moves ~2 min/day in spring and fall). 03:00 is just after the
+  02:00 DST changeover, so the board's clock catches up the same night. It sleeps in <=1 h chunks and re-reads
+  the wall clock so a laptop suspend can't make it oversleep.
+- Known limitation: the daemon sends a fixed UTC offset (no DST rules) with `set_time`, so between a DST change
+  and the next resync (at most until 03:00 that night, or the next reconnect) the clock is an hour off.
 - Note: building the firmware needs LVGL 9.5.0. With ESP-IDF's offline component snapshot set by `eim`
   (`IDF_COMPONENT_LOCAL_STORAGE_URL`) the manager resolves a stale 9.2.0; unset it, and pin 9.5.0 in
   the (gitignored) `dependencies.lock`. `^9.2` alone now resolves to 9.6.0.
