@@ -18,7 +18,7 @@ static void IRAM_ATTR button_isr(void *arg)
     if (now - s_last_press_us < DEBOUNCE_US) return;
     s_last_press_us = now;
 
-    ble_evt_t evt = { .type = BLE_EVT_NOTIF_CLEAR };
+    ble_evt_t evt = { .type = BLE_EVT_BUTTON_PRESS };
     BaseType_t woken = pdFALSE;
     xQueueSendFromISR(s_queue, &evt, &woken);
     if (woken) portYIELD_FROM_ISR();
@@ -40,5 +40,5 @@ void button_init(QueueHandle_t evt_queue)
     gpio_install_isr_service(0);
     gpio_isr_handler_add(BUTTON_GPIO, button_isr, NULL);
 
-    ESP_LOGI(TAG, "GPIO %d button initialized (clear notifications)", BUTTON_GPIO);
+    ESP_LOGI(TAG, "GPIO %d button initialized (wake / clear notifications)", BUTTON_GPIO);
 }

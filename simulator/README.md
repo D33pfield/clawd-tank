@@ -42,6 +42,7 @@ Opens a 640x344 window (320x172 scaled 2x). Keyboard shortcuts:
 | `n` | Add sample notification (cycles through 6 presets) |
 | `1`-`8` | Dismiss notification by index |
 | `x` | Clear all notifications |
+| `b` | BOOT button (wakes a sleeping display, else clears notifications) |
 | `s` | Save screenshot to current directory |
 | `z` | Force sleep state |
 | `q` / `Esc` | Quit |

@@ -26,6 +26,7 @@ typedef enum {
     BLE_EVT_SET_SESSIONS,
     BLE_EVT_CONNECTED,
     BLE_EVT_DISCONNECTED,
+    BLE_EVT_BUTTON_PRESS,
 } ble_evt_type_t;
 
 typedef struct {

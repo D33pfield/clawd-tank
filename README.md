@@ -75,7 +75,7 @@ cmake -B build-static -DSTATIC_SDL2=ON && cmake --build build-static
   --screenshot-dir ./shots/ --screenshot-on-event
 ```
 
-Interactive keys: `c` connect, `d` disconnect, `n` add notification, `1-8` dismiss, `x` clear, `s` screenshot, `z` sleep, `q` quit. The window is borderless and resizable — drag from center, resize from edges.
+Interactive keys: `c` connect, `d` disconnect, `n` add notification, `1-8` dismiss, `x` clear, `b` BOOT button, `s` screenshot, `z` sleep, `q` quit. The window is borderless and resizable — drag from center, resize from edges.
 
 When `--listen` is active (default port 19872), the daemon can connect over TCP and drive the simulator with the same JSON protocol used over BLE, enabling the full Claude Code → daemon → display pipeline without hardware.
 

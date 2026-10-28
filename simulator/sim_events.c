@@ -102,6 +102,11 @@ void sim_events_init_inline(const char *events_str)
             add_event(current_time, &evt, "clear");
             p += 5;
         }
+        else if (strncmp(p, "button", 6) == 0 && (!p[6] || p[6] == ';' || isspace((unsigned char)p[6]))) {
+            ble_evt_t evt = { .type = BLE_EVT_BUTTON_PRESS };
+            add_event(current_time, &evt, "button");
+            p += 6;
+        }
         else if (strncmp(p, "config", 6) == 0) {
             p += 6;
             char json_str[256];

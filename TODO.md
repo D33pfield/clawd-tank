@@ -43,6 +43,17 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
   (`IDF_COMPONENT_LOCAL_STORAGE_URL`) the manager resolves a stale 9.2.0; unset it, and pin 9.5.0 in
   the (gitignored) `dependencies.lock`. `^9.2` alone now resolves to 9.6.0.
 
+## BOOT Button Wakes the Display — Complete
+
+- [x] **Peek wake** — sleep is decided by the host daemon (no active sessions), and the board used to stay
+  dark until the next session started. The BOOT button now posts its own `BLE_EVT_BUTTON_PRESS`: while
+  sleeping it lights the backlight for 20 s (`SLEEP_PEEK_MS`, extended by another press, cancelled if the
+  host wakes the display); while awake it clears notifications as before. A host `clear` action still uses
+  `BLE_EVT_NOTIF_CLEAR` and does not wake the screen.
+- [x] Simulator: `button` event and `b` key. Note `config {"brightness":102}` (unquoted JSON, no spaces)
+  is needed to see non-zero backlight values in the simulator's log.
+- [ ] A true "stay awake for N minutes" would need a device→host event so the daemon can defer sleeping.
+
 ## README Animation Gallery — Complete
 
 - [x] **Exhaustive animation gallery** — README lists all 19 on-device animations (with their
