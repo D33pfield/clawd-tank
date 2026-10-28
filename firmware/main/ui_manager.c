@@ -57,13 +57,20 @@ static int s_sky_minute = 0;            /* minutes since midnight; night until t
 static int s_last_sky_minute = -1;
 static volatile bool s_sky_dirty = false;  /* set from other tasks to force a refresh */
 
+/* Today's sunrise/sunset, sent by the host with set_time. Written from the BLE
+ * task as one packed word (sunrise << 16 | sunset) so the UI task never sees a
+ * half-updated pair; SUN_NONE means "host sent nothing, use the defaults". */
+#define SUN_NONE 0xFFFFFFFFu
+static volatile uint32_t s_sun_packed = SUN_NONE;
+static daynight_sun_t s_sun = { DAYNIGHT_DEFAULT_SUNRISE, DAYNIGHT_DEFAULT_SUNSET };  /* UI task copy */
+
 /* Backlight duty: the configured brightness, scaled by the time of day when the
  * day/night cycle is on (that path also caps it at 50%, see daynight.h). */
 static void apply_backlight(void)
 {
     uint8_t duty = config_store_get_brightness();
     if (config_store_get_day_night()) {
-        duty = daynight_backlight(s_sky_minute, duty);
+        duty = daynight_backlight(s_sky_minute, &s_sun, duty);
     }
     display_set_brightness(duty);
 }
@@ -71,6 +78,16 @@ static void apply_backlight(void)
 void ui_manager_config_changed(void)
 {
     s_sky_dirty = true;  /* applied on the next ui_manager_tick() */
+}
+
+void ui_manager_set_sun_times(int sunrise_min, int sunset_min)
+{
+    if (sunrise_min < 0 || sunset_min <= sunrise_min || sunset_min > 1440) {
+        s_sun_packed = SUN_NONE;
+    } else {
+        s_sun_packed = ((uint32_t)sunrise_min << 16) | (uint32_t)sunset_min;
+    }
+    s_sky_dirty = true;
 }
 
 static void scene_animate_width(int target_px, int anim_ms)
@@ -361,9 +378,14 @@ void ui_manager_tick(void)
         s_last_sky_minute = sky_minute;
         s_sky_dirty = false;
         s_sky_minute = sky_minute;
+
+        uint32_t sun = s_sun_packed;  /* one read: the pair stays consistent */
+        s_sun.sunrise_min = sun == SUN_NONE ? DAYNIGHT_DEFAULT_SUNRISE : (int)(sun >> 16);
+        s_sun.sunset_min = sun == SUN_NONE ? DAYNIGHT_DEFAULT_SUNSET : (int)(sun & 0xFFFF);
+
         daynight_palette_t pal;
         if (config_store_get_day_night()) {
-            daynight_palette(sky_minute, &pal);
+            daynight_palette(sky_minute, &s_sun, &pal);
         } else {
             daynight_night_palette(&pal);  /* cycle off: the original night scene */
         }

@@ -111,6 +111,15 @@ int sim_ble_parse_json(const char *buf, uint16_t len, ble_evt_t *out) {
             tzset();
             printf("[tcp] Timezone set to %s\n", tz->valuestring);
         }
+        /* Optional sunrise/sunset for the day/night sky; absent means defaults. */
+        cJSON *sunrise = cJSON_GetObjectItem(json, "sunrise");
+        cJSON *sunset = cJSON_GetObjectItem(json, "sunset");
+        if (sunrise && sunset && cJSON_IsNumber(sunrise) && cJSON_IsNumber(sunset)) {
+            ui_manager_set_sun_times(sunrise->valueint, sunset->valueint);
+            printf("[tcp] Sun times: rise %d, set %d (minutes)\n", sunrise->valueint, sunset->valueint);
+        } else {
+            ui_manager_set_sun_times(-1, -1);
+        }
         cJSON_Delete(json);
         return 1;
     } else if (strcmp(action->valuestring, "set_status") == 0) {

@@ -103,6 +103,14 @@ void sim_events_init_inline(const char *events_str)
             add_event(current_time, &evt, "clear");
             p += 5;
         }
+        else if (strncmp(p, "sun", 3) == 0 && (p[3] == ' ' || p[3] == '\t')) {
+            /* sun <sunrise_min> <sunset_min>: today's sun times, applied directly like `config` */
+            int rise = -1, set = -1, used = 0;
+            sscanf(p + 3, " %d %d%n", &rise, &set, &used);
+            ui_manager_set_sun_times(rise, set);
+            printf("[sim] Sun times: rise %d, set %d (minutes)\n", rise, set);
+            p += 3 + used;
+        }
         else if (strncmp(p, "config", 6) == 0) {
             p += 6;
             char json_str[256];
