@@ -23,6 +23,11 @@ void ui_manager_config_changed(void);
  * means the default 06:30 / 18:30. Safe to call from any task. */
 void ui_manager_set_sun_times(int sunrise_min, int sunset_min);
 
+/* The host has set the clock (set_time with an epoch). Until then the day/night
+ * sky stays on night, because the board's clock is just uptime since 1970.
+ * Safe to call from any task. */
+void ui_manager_time_synced(void);
+
 #ifdef SIMULATOR
 #include "scene.h"
 
