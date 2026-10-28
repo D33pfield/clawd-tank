@@ -139,6 +139,17 @@ static void parse_notification_json(const char *buf, uint16_t len) {
             tzset();
             ESP_LOGI(TAG, "Timezone set to %s", tz->valuestring);
         }
+        /* Optional: today's sunrise/sunset for the day/night sky. Absent or
+         * invalid means "use the defaults", so a host that stops sending them
+         * doesn't leave stale values behind. */
+        cJSON *sunrise = cJSON_GetObjectItem(json, "sunrise");
+        cJSON *sunset = cJSON_GetObjectItem(json, "sunset");
+        if (sunrise && sunset && cJSON_IsNumber(sunrise) && cJSON_IsNumber(sunset)) {
+            ui_manager_set_sun_times(sunrise->valueint, sunset->valueint);
+            ESP_LOGI(TAG, "Sun times: rise %d, set %d (minutes)", sunrise->valueint, sunset->valueint);
+        } else {
+            ui_manager_set_sun_times(-1, -1);
+        }
         cJSON_Delete(json);
         return;
     } else if (strcmp(action->valuestring, "set_status") == 0) {

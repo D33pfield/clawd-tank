@@ -15,9 +15,24 @@ typedef struct {
     uint8_t  backlight_pct;  /* share of the configured brightness, 0-100 */
 } daynight_palette_t;
 
+/* Today's sunrise and sunset in local minutes since midnight. The host computes
+ * them (they shift through the year) and sends them with set_time. */
+typedef struct {
+    int sunrise_min;
+    int sunset_min;
+} daynight_sun_t;
+
+/* Used when the host sends nothing, or sends values that don't make sense. */
+#define DAYNIGHT_DEFAULT_SUNRISE (6 * 60 + 30)
+#define DAYNIGHT_DEFAULT_SUNSET  (18 * 60 + 30)
+
 /* Palette for a local time given as minutes since midnight (0-1439).
- * Blends smoothly between night, dawn, day and dusk. Out-of-range values wrap. */
-void daynight_palette(int minute_of_day, daynight_palette_t *out);
+ * Blends smoothly between night, dawn (ending at sunrise), day, dusk (at sunset)
+ * and night. Out-of-range minutes wrap. `sun` may be NULL for the defaults;
+ * invalid values (sunrise not before sunset, or outside 0-1440) also fall back
+ * to them. Odd but valid values (very short or very long days) are squeezed so
+ * the timeline always stays ordered. */
+void daynight_palette(int minute_of_day, const daynight_sun_t *sun, daynight_palette_t *out);
 
 /* The fixed night look (the scene's original palette), used when the day/night
  * cycle is turned off. Same as daynight_palette() at midnight. */
@@ -25,8 +40,8 @@ void daynight_night_palette(daynight_palette_t *out);
 
 /* Backlight duty (0-255) for the time of day, scaled from the user's configured
  * brightness. Never exceeds DAYNIGHT_BACKLIGHT_MAX_DUTY, and a configured value
- * of 0 stays 0. */
-uint8_t daynight_backlight(int minute_of_day, uint8_t configured_duty);
+ * of 0 stays 0. `sun` as for daynight_palette(). */
+uint8_t daynight_backlight(int minute_of_day, const daynight_sun_t *sun, uint8_t configured_duty);
 
 /* Waveshare: keep the screen at 50% brightness or lower to avoid overheating. */
 #define DAYNIGHT_BACKLIGHT_MAX_DUTY 127

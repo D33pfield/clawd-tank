@@ -49,7 +49,7 @@ The original protocol. No version characteristic — the daemon infers v1 from i
 | `add` | `{"action":"add","id":"...","project":"...","message":"..."}` | Add/update a notification card |
 | `dismiss` | `{"action":"dismiss","id":"..."}` | Dismiss a notification by ID |
 | `clear` | `{"action":"clear"}` | Clear all notifications |
-| `set_time` | `{"action":"set_time","epoch":1234567890,"tz":"UTC-3"}` | Sync host time + POSIX timezone |
+| `set_time` | `{"action":"set_time","epoch":1234567890,"tz":"UTC-3","sunrise":435,"sunset":990}` | Sync host time + POSIX timezone. `sunrise` / `sunset` are optional: today's local minutes since midnight, used by the day/night sky (`day_night` config). If either is missing or invalid the firmware uses 06:30 / 18:30, so a host that stops sending them leaves nothing stale. Older firmware ignores them. |
 | `set_status` | `{"action":"set_status","status":"working_1"}` | Set display animation state |
 
 **`set_status` values:**

@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
@@ -19,6 +20,7 @@ from .protocol import (
 )
 from .sim_client import SimClient, SIM_DEFAULT_PORT
 from .socket_server import SocketServer
+from .sun import todays_sun_times
 from .transport import TransportClient
 from . import session_store
 from .session_store import save_sessions, load_sessions
@@ -53,6 +55,19 @@ PID_DEDUP_FRESHNESS_SECONDS = 60.0
 # never reports range/sleep disconnects, so without this probe a dead link is
 # never detected and the daemon never re-scans. Detection lag ~= this interval.
 BLE_LIVENESS_INTERVAL_SECS = 20.0
+
+# The board only learns the time, timezone and today's sunrise/sunset when we send
+# them, and a BLE link can stay up for weeks. Re-send once a day, just after the
+# 02:00 DST changeover, so the clock, DST shifts and the seasonal sky stay right.
+TIME_RESYNC_HOUR = 3
+
+
+def next_resync_after(now: datetime) -> datetime:
+    """The next local TIME_RESYNC_HOUR:00 strictly after `now` (naive local time)."""
+    target = now.replace(hour=TIME_RESYNC_HOUR, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return target
 
 
 @runtime_checkable
@@ -585,6 +600,31 @@ class ClawdDaemon:
             await asyncio.sleep(BLE_LIVENESS_INTERVAL_SECS)
             await self._probe_ble_liveness()
 
+    async def _resync_time_all(self) -> None:
+        """Re-send time, timezone and sun times to every connected transport."""
+        for name, transport in list(self._transports.items()):
+            if not transport.is_connected:
+                continue  # it gets a full sync when it (re)connects
+            try:
+                await self._sync_time_for(transport)
+            except Exception:
+                logger.exception("Daily time sync failed for transport '%s'", name)
+
+    async def _daily_time_sync(self) -> None:
+        """Async task: resync the board's time once a day at TIME_RESYNC_HOUR local.
+
+        Sleeps in chunks of at most an hour and re-reads the wall clock, so a laptop
+        suspend (which pauses the monotonic clock) can't make it oversleep by a day.
+        """
+        target = next_resync_after(datetime.now())
+        while self._running:
+            wait = (target - datetime.now()).total_seconds()
+            if wait > 0:
+                await asyncio.sleep(min(wait, 3600.0))
+                continue
+            await self._resync_time_all()
+            target = next_resync_after(datetime.now())
+
     def set_session_timeout(self, seconds: int) -> None:
         self._session_staleness_timeout = float(seconds)
         logger.info("Session staleness timeout set to %ds", seconds)
@@ -615,9 +655,14 @@ class ClawdDaemon:
         hours, remainder = divmod(abs_offset, 3600)
         minutes = remainder // 60
         tz = f"UTC{sign}{hours}" if minutes == 0 else f"UTC{sign}{hours}:{minutes:02d}"
-        payload = json.dumps({"action": "set_time", "epoch": epoch, "tz": tz})
-        await transport.write_notification(payload)
-        logger.info("Synced time: epoch %d, tz %s", epoch, tz)
+        msg = {"action": "set_time", "epoch": epoch, "tz": tz}
+        # Today's sunrise/sunset (local minutes) for the display's day/night sky.
+        # Omitted when the host can't work them out; the board then uses its defaults.
+        sun = todays_sun_times()
+        if sun is not None:
+            msg["sunrise"], msg["sunset"] = sun
+        await transport.write_notification(json.dumps(msg))
+        logger.info("Synced time: epoch %d, tz %s, sun %s", epoch, tz, sun)
 
     async def _post_connect_sync(self, transport, name: str) -> None:
         """Run time sync, version read, and replay after a (re)connection."""
@@ -728,6 +773,13 @@ class ClawdDaemon:
             except asyncio.CancelledError:
                 pass
 
+        if hasattr(self, '_time_sync_task'):
+            self._time_sync_task.cancel()
+            try:
+                await self._time_sync_task
+            except asyncio.CancelledError:
+                pass
+
         for task in self._sender_tasks.values():
             task.cancel()
         for task in self._sender_tasks.values():
@@ -827,6 +879,7 @@ class ClawdDaemon:
         self._staleness_task = asyncio.create_task(self._staleness_checker())
         self._liveness_task = asyncio.create_task(self._liveness_checker())
         self._ble_liveness_task = asyncio.create_task(self._ble_liveness_checker())
+        self._time_sync_task = asyncio.create_task(self._daily_time_sync())
 
         await self._shutdown_event.wait()
         logger.info("Daemon run() finished")
