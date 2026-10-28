@@ -53,9 +53,19 @@ static display_status_t s_display_status = DISPLAY_STATUS_IDLE;
 static int s_last_minute = -1;
 
 /* Time of day driving the sky and backlight (see daynight.c). */
-static int s_sky_minute = 0;            /* minutes since midnight; night until time is synced */
+static int s_sky_minute = 0;            /* minutes since midnight; 0 (night) until the clock is synced */
 static int s_last_sky_minute = -1;
 static volatile bool s_sky_dirty = false;  /* set from other tasks to force a refresh */
+
+/* The board has no RTC: until the host sends set_time, its clock counts up from
+ * 1970 at power-on, which would walk the sky through "day" a few hours later.
+ * Show night until the first sync. The simulator runs on the host's real clock, so
+ * it starts synced (UI_CLOCK_STARTS_UNSYNCED lets tests exercise the other path). */
+#if defined(SIMULATOR) && !defined(UI_CLOCK_STARTS_UNSYNCED)
+static volatile bool s_time_synced = true;
+#else
+static volatile bool s_time_synced = false;
+#endif
 
 /* Today's sunrise/sunset, sent by the host with set_time. Written from the BLE
  * task as one packed word (sunrise << 16 | sunset) so the UI task never sees a
@@ -78,6 +88,12 @@ static void apply_backlight(void)
 void ui_manager_config_changed(void)
 {
     s_sky_dirty = true;  /* applied on the next ui_manager_tick() */
+}
+
+void ui_manager_time_synced(void)
+{
+    s_time_synced = true;
+    s_sky_dirty = true;  /* leave the night placeholder on the next tick */
 }
 
 void ui_manager_set_sun_times(int sunrise_min, int sunset_min)
@@ -372,7 +388,7 @@ void ui_manager_tick(void)
 #ifdef DAYNIGHT_FORCE_MINUTE
     int sky_minute = DAYNIGHT_FORCE_MINUTE;  /* test builds: pin the time of day */
 #else
-    int sky_minute = cur_minute;
+    int sky_minute = s_time_synced ? cur_minute : 0;  /* night until the host sets the clock */
 #endif
     /* With the cycle off nothing depends on the clock, so don't redo (and log) the
      * same work every minute; a config change still gets through via s_sky_dirty. */

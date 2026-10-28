@@ -103,6 +103,7 @@ int sim_ble_parse_json(const char *buf, uint16_t len, ble_evt_t *out) {
         if (epoch && cJSON_IsNumber(epoch)) {
             struct timeval tv = { .tv_sec = (time_t)epoch->valuedouble, .tv_usec = 0 };
             settimeofday(&tv, NULL);
+            ui_manager_time_synced();
             printf("[tcp] System time set to epoch %lld\n", (long long)tv.tv_sec);
         }
         cJSON *tz = cJSON_GetObjectItem(json, "tz");
