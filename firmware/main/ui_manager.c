@@ -374,7 +374,10 @@ void ui_manager_tick(void)
 #else
     int sky_minute = cur_minute;
 #endif
-    if (sky_minute != s_last_sky_minute || s_sky_dirty) {
+    /* With the cycle off nothing depends on the clock, so don't redo (and log) the
+     * same work every minute; a config change still gets through via s_sky_dirty. */
+    const bool cycle_on = config_store_get_day_night();
+    if ((cycle_on && sky_minute != s_last_sky_minute) || s_sky_dirty) {
         s_last_sky_minute = sky_minute;
         s_sky_dirty = false;
         s_sky_minute = sky_minute;
@@ -384,7 +387,7 @@ void ui_manager_tick(void)
         s_sun.sunset_min = sun == SUN_NONE ? DAYNIGHT_DEFAULT_SUNSET : (int)(sun & 0xFFFF);
 
         daynight_palette_t pal;
-        if (config_store_get_day_night()) {
+        if (cycle_on) {
             daynight_palette(sky_minute, &s_sun, &pal);
         } else {
             daynight_night_palette(&pal);  /* cycle off: the original night scene */
