@@ -698,3 +698,141 @@ async def test_handle_message_broadcasts_to_dynamically_added_transport():
         await daemon._sender_tasks["sim"]
     except asyncio.CancelledError:
         pass
+
+
+@pytest.mark.asyncio
+async def test_sync_time_includes_sun_times_when_known():
+    """set_time carries today's sunrise/sunset (local minutes) for the day/night sky."""
+    daemon = ClawdDaemon()
+    transport = AsyncMock()
+    payloads = []
+
+    async def write(payload):
+        payloads.append(json.loads(payload))
+        return True
+
+    transport.write_notification = write
+    with patch("clawd_tank_daemon.daemon.todays_sun_times", return_value=(435, 990)):
+        await daemon._sync_time_for(transport)
+
+    assert payloads[0]["action"] == "set_time"
+    assert payloads[0]["sunrise"] == 435
+    assert payloads[0]["sunset"] == 990
+    assert "epoch" in payloads[0] and "tz" in payloads[0]
+
+
+@pytest.mark.asyncio
+async def test_sync_time_omits_sun_times_when_unknown():
+    """With no location the board is sent nothing extra and keeps its defaults."""
+    daemon = ClawdDaemon()
+    transport = AsyncMock()
+    payloads = []
+
+    async def write(payload):
+        payloads.append(json.loads(payload))
+        return True
+
+    transport.write_notification = write
+    with patch("clawd_tank_daemon.daemon.todays_sun_times", return_value=None):
+        await daemon._sync_time_for(transport)
+
+    assert "sunrise" not in payloads[0] and "sunset" not in payloads[0]
+    assert payloads[0]["action"] == "set_time"
+
+
+# --- daily time resync -------------------------------------------------------
+
+
+def test_next_resync_after_picks_the_next_3am():
+    from datetime import datetime
+    from clawd_tank_daemon.daemon import next_resync_after
+
+    # Before 03:00: later the same day.
+    assert next_resync_after(datetime(2026, 10, 28, 1, 15)) == datetime(2026, 10, 28, 3, 0)
+    # After 03:00: tomorrow.
+    assert next_resync_after(datetime(2026, 10, 28, 3, 0, 1)) == datetime(2026, 10, 29, 3, 0)
+    assert next_resync_after(datetime(2026, 10, 28, 12, 0)) == datetime(2026, 10, 29, 3, 0)
+    # Exactly 03:00 counts as already done (strictly after).
+    assert next_resync_after(datetime(2026, 10, 28, 3, 0)) == datetime(2026, 10, 29, 3, 0)
+    # Month and year rollover.
+    assert next_resync_after(datetime(2026, 12, 31, 23, 59)) == datetime(2027, 1, 1, 3, 0)
+
+
+@pytest.mark.asyncio
+async def test_resync_time_all_only_touches_connected_transports():
+    daemon = ClawdDaemon()
+    sent = {}
+
+    def make(name, connected):
+        t = AsyncMock()
+        t.is_connected = connected
+
+        async def write(payload, name=name):
+            sent.setdefault(name, []).append(json.loads(payload))
+            return True
+
+        t.write_notification = write
+        return t
+
+    daemon._transports.clear()
+    daemon._transports["ble"] = make("ble", True)
+    daemon._transports["sim"] = make("sim", False)
+
+    with patch("clawd_tank_daemon.daemon.todays_sun_times", return_value=(400, 1000)):
+        await daemon._resync_time_all()
+
+    assert [m["action"] for m in sent["ble"]] == ["set_time"]
+    assert sent["ble"][0]["sunrise"] == 400
+    assert "sim" not in sent  # not connected: it gets a full sync when it connects
+
+
+@pytest.mark.asyncio
+async def test_resync_time_all_survives_a_failing_transport():
+    daemon = ClawdDaemon()
+    sent = []
+
+    bad = AsyncMock()
+    bad.is_connected = True
+    bad.write_notification = AsyncMock(side_effect=RuntimeError("link died"))
+
+    good = AsyncMock()
+    good.is_connected = True
+
+    async def write(payload):
+        sent.append(json.loads(payload))
+        return True
+
+    good.write_notification = write
+
+    daemon._transports.clear()
+    daemon._transports["a_bad"] = bad
+    daemon._transports["b_good"] = good
+
+    with patch("clawd_tank_daemon.daemon.todays_sun_times", return_value=None):
+        await daemon._resync_time_all()  # must not raise
+
+    assert [m["action"] for m in sent] == ["set_time"]
+
+
+@pytest.mark.asyncio
+async def test_daily_time_sync_fires_when_the_time_arrives():
+    from datetime import datetime, timedelta
+
+    daemon = ClawdDaemon()
+    daemon._running = True
+    calls = []
+
+    async def fake_resync():
+        calls.append(1)
+        daemon._running = False  # stop the loop after the first resync
+
+    daemon._resync_time_all = fake_resync
+    now = datetime.now()
+    # First target is already due; the next one is a day away.
+    with patch(
+        "clawd_tank_daemon.daemon.next_resync_after",
+        side_effect=[now - timedelta(seconds=1), now + timedelta(days=1)],
+    ):
+        await asyncio.wait_for(daemon._daily_time_sync(), timeout=2)
+
+    assert calls == [1]

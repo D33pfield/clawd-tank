@@ -18,6 +18,11 @@ void ui_manager_tick(void);
  * day/night setting. Safe to call from any task; takes effect on the next tick. */
 void ui_manager_config_changed(void);
 
+/* Today's sunrise and sunset in local minutes since midnight, as computed by the
+ * host (they shift through the year). Anything invalid, or never calling this,
+ * means the default 06:30 / 18:30. Safe to call from any task. */
+void ui_manager_set_sun_times(int sunrise_min, int sunset_min);
+
 #ifdef SIMULATOR
 #include "scene.h"
 
