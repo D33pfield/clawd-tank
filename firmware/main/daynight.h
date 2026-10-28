@@ -19,6 +19,10 @@ typedef struct {
  * Blends smoothly between night, dawn, day and dusk. Out-of-range values wrap. */
 void daynight_palette(int minute_of_day, daynight_palette_t *out);
 
+/* The fixed night look (the scene's original palette), used when the day/night
+ * cycle is turned off. Same as daynight_palette() at midnight. */
+void daynight_night_palette(daynight_palette_t *out);
+
 /* Backlight duty (0-255) for the time of day, scaled from the user's configured
  * brightness. Never exceeds DAYNIGHT_BACKLIGHT_MAX_DUTY, and a configured value
  * of 0 stays 0. */

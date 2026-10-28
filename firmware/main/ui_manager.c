@@ -57,13 +57,18 @@ static int s_sky_minute = 0;            /* minutes since midnight; night until t
 static int s_last_sky_minute = -1;
 static volatile bool s_sky_dirty = false;  /* set from other tasks to force a refresh */
 
-/* Backlight for the current time of day, scaled from the configured brightness. */
+/* Backlight duty: the configured brightness, scaled by the time of day when the
+ * day/night cycle is on (that path also caps it at 50%, see daynight.h). */
 static void apply_backlight(void)
 {
-    display_set_brightness(daynight_backlight(s_sky_minute, config_store_get_brightness()));
+    uint8_t duty = config_store_get_brightness();
+    if (config_store_get_day_night()) {
+        duty = daynight_backlight(s_sky_minute, duty);
+    }
+    display_set_brightness(duty);
 }
 
-void ui_manager_refresh_backlight(void)
+void ui_manager_config_changed(void)
 {
     s_sky_dirty = true;  /* applied on the next ui_manager_tick() */
 }
@@ -345,8 +350,8 @@ void ui_manager_tick(void)
     localtime_r(&tv.tv_sec, &tm);
     int cur_minute = tm.tm_hour * 60 + tm.tm_min;
 
-    /* Sky + backlight follow the time of day, in every UI state. A pending
-     * brightness change from the host also lands here (s_sky_dirty). */
+    /* Sky + backlight follow the time of day (when enabled), in every UI state.
+     * A pending config change from the host also lands here (s_sky_dirty). */
 #ifdef DAYNIGHT_FORCE_MINUTE
     int sky_minute = DAYNIGHT_FORCE_MINUTE;  /* test builds: pin the time of day */
 #else
@@ -357,7 +362,11 @@ void ui_manager_tick(void)
         s_sky_dirty = false;
         s_sky_minute = sky_minute;
         daynight_palette_t pal;
-        daynight_palette(sky_minute, &pal);
+        if (config_store_get_day_night()) {
+            daynight_palette(sky_minute, &pal);
+        } else {
+            daynight_night_palette(&pal);  /* cycle off: the original night scene */
+        }
         scene_set_daynight(s_scene, &pal);
         if (s_display_status != DISPLAY_STATUS_SLEEPING) {
             apply_backlight();
