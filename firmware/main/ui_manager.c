@@ -426,7 +426,9 @@ void ui_manager_tick(void)
             daynight_night_palette(&pal);  /* cycle off: the original night scene */
         }
         scene_set_daynight(s_scene, &pal);
-        if (s_display_status != DISPLAY_STATUS_SLEEPING) {
+        /* A sleeping display stays dark, except during a BOOT-button peek, where
+         * the screen is deliberately lit and must track brightness changes. */
+        if (s_display_status != DISPLAY_STATUS_SLEEPING || s_peeking) {
             apply_backlight();
         }
     }

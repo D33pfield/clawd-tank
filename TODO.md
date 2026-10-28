@@ -86,7 +86,12 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
   `BLE_EVT_NOTIF_CLEAR` and does not wake the screen.
 - [x] Simulator: `button` event and `b` key. Note `config {"brightness":102}` (unquoted JSON, no spaces)
   is needed to see non-zero backlight values in the simulator's log.
+- [x] The lit screen during a peek tracks brightness and day/night changes (a brightness write, or the minute
+  passing sunrise/sunset, no longer waits for the peek to end). Checked in the simulator with an accelerated
+  clock: 1 backlight update during a peek before, 8 after.
 - [ ] A true "stay awake for N minutes" would need a device→host event so the daemon can defer sleeping.
+- [ ] No automated test covers the peek logic (only manual simulator runs); extracting the decision into a
+  pure helper in the style of `daynight.c` would make it unit-testable.
 
 ## README Animation Gallery — Complete
 
