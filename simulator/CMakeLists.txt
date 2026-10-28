@@ -49,6 +49,7 @@ add_executable(clawd-tank-sim
     cjson/cJSON.c
     # Shared firmware sources (compiled unmodified)
     ${FIRMWARE_DIR}/scene.c
+    ${FIRMWARE_DIR}/daynight.c
     ${FIRMWARE_DIR}/notification_ui.c
     ${FIRMWARE_DIR}/ui_manager.c
     ${FIRMWARE_DIR}/notification.c

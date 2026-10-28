@@ -14,6 +14,10 @@ void ui_manager_handle_event(const ble_evt_t *evt);
 // Run one iteration of LVGL timer handler. Called from the UI task loop.
 void ui_manager_tick(void);
 
+/* Re-apply the backlight (after the host changed the configured brightness).
+ * Safe to call from any task; takes effect on the next tick. */
+void ui_manager_refresh_backlight(void);
+
 #ifdef SIMULATOR
 #include "scene.h"
 

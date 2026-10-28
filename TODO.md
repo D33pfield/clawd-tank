@@ -24,6 +24,25 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
 
 ---
 
+## Day/Night Sky — Complete
+
+- [x] **Time-of-day scene** — `firmware/main/daynight.c` maps the board's local time (host-synced via
+  `set_time`) to a palette: night until 05:00, dawn (orange horizon) 06:30, full day 08:30–17:00, dusk
+  18:30, night again by 20:30, blended smoothly. `scene_set_daynight()` applies sky/grass/tuft/clock
+  colors and fades the stars out by day; `ui_manager_tick()` updates it every minute in every UI state.
+  Pure logic is unit tested (`firmware/test/test_daynight.c`), including smoothness over all 1440 minutes.
+- [x] **Backlight follows the cycle** — `daynight_backlight()` scales the configured brightness (35% at
+  night → 100% by day), floors at duty 12 while awake, and caps at duty 127 (50%, Waveshare's limit).
+  Host brightness writes now go through `ui_manager_refresh_backlight()` so they are scaled too.
+- [x] Test builds can pin the time of day with `-DDAYNIGHT_FORCE_MINUTE=<minute-of-day>`
+  (e.g. `idf.py -B build-daylight -DCMAKE_C_FLAGS=-DDAYNIGHT_FORCE_MINUTE=720 build`).
+- [x] Fixed `make test`: the `esp_log.h` test stub dropped the `TAG` argument, so newer GCC failed
+  `config_store.c` with `-Werror=unused-variable`.
+- [ ] Follow-ups: seasonal sunrise/sunset times; make the schedule configurable over BLE.
+- Note: building the firmware needs LVGL 9.5.0. With ESP-IDF's offline component snapshot set by `eim`
+  (`IDF_COMPONENT_LOCAL_STORAGE_URL`) the manager resolves a stale 9.2.0; unset it, and pin 9.5.0 in
+  the (gitignored) `dependencies.lock`. `^9.2` alone now resolves to 9.6.0.
+
 ## README Animation Gallery — Complete
 
 - [x] **Exhaustive animation gallery** — README lists all 19 on-device animations (with their
