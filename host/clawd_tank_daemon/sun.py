@@ -26,6 +26,11 @@ ZONE_TAB_PATHS = (
     "/usr/share/lib/zoneinfo/zone.tab",
     "/var/db/timezone/zoneinfo/zone.tab",
 )
+ZONEINFO_DIRS = (
+    "/usr/share/zoneinfo",
+    "/usr/share/lib/zoneinfo",
+    "/var/db/timezone/zoneinfo",
+)
 
 # Polar day/night: keep the "day" between 2.5 and 23 hours so the display's fades
 # (which need room on either side of noon) always make sense.
@@ -37,31 +42,41 @@ _ZONE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)+$")
 _COORD = re.compile(r"^([+-])(\d{2})(\d{2})(\d{2})?([+-])(\d{3})(\d{2})(\d{2})?$")
 
 
+def _clean_zone_name(raw: str) -> Optional[str]:
+    """Normalise a TZ value or zoneinfo path to an IANA name (``Asia/Tokyo``), or None."""
+    name = raw.strip().lstrip(":")
+    if "zoneinfo/" in name:  # a path into the zoneinfo tree
+        name = name.split("zoneinfo/", 1)[1]
+    name = re.sub(r"^(posix|right)/", "", name)  # alternate copies of the same tree
+    return name if _ZONE_NAME.match(name) else None
+
+
 def local_zone_name(
     env: Mapping[str, str] = os.environ,
     localtime_path: str = "/etc/localtime",
     timezone_file: str = "/etc/timezone",
 ) -> Optional[str]:
     """IANA name of the host's timezone (``America/Chicago``), or None."""
-    tz = env.get("TZ", "").lstrip(":")
-    if _ZONE_NAME.match(tz):
-        return tz
+    tz = env.get("TZ", "")
+    if tz:
+        # An explicit TZ overrides /etc/localtime. If we can't map it to a place
+        # (UTC, EST5EDT, a POSIX string) don't fall back to the system's zone: the
+        # clock would follow TZ but the coordinates wouldn't.
+        return _clean_zone_name(tz)
 
     # macOS and most Linux: /etc/localtime is a symlink into the zoneinfo tree.
     try:
-        target = os.path.realpath(localtime_path)
-        if "zoneinfo/" in target:
-            name = target.split("zoneinfo/", 1)[1]
-            if _ZONE_NAME.match(name):
-                return name
+        name = _clean_zone_name(os.path.realpath(localtime_path))
+        if name:
+            return name
     except OSError:
         pass
 
     # Debian-style systems keep the name in a text file.
     try:
         with open(timezone_file) as f:
-            name = f.read().strip()
-        if _ZONE_NAME.match(name):
+            name = _clean_zone_name(f.read())
+        if name:
             return name
     except OSError:
         pass
@@ -93,6 +108,57 @@ def zone_coordinates(
                         return _parse_coord(fields[1])
         except OSError:
             continue
+    return None
+
+
+def _zone_tab_names(zone_tab_paths: Sequence[str]) -> set:
+    names = set()
+    for path in zone_tab_paths:
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    fields = line.rstrip("\n").split("\t")
+                    if not line.startswith("#") and len(fields) >= 3:
+                        names.add(fields[2])
+        except OSError:
+            continue
+    return names
+
+
+def resolve_zone_alias(
+    zone_name: str,
+    zone_tab_paths: Sequence[str] = ZONE_TAB_PATHS,
+    zoneinfo_dirs: Sequence[str] = ZONEINFO_DIRS,
+) -> Optional[str]:
+    """The zone.tab name that `zone_name` is a link to (``US/Central`` -> ``America/Chicago``).
+
+    zone.tab only lists each zone once, but systems also install the old and
+    alternative names as symlinks or hard links. Only real links count: zones that
+    merely have identical data can belong to different cities.
+    """
+    names = None
+    for zdir in zoneinfo_dirs:
+        path = os.path.join(zdir, zone_name)
+        if not os.path.isfile(path):
+            continue
+        if names is None:
+            names = _zone_tab_names(zone_tab_paths)
+
+        root = os.path.realpath(zdir)
+        real = os.path.realpath(path)
+        if real.startswith(root + os.sep):  # a symlink to the canonical file
+            target = real[len(root) + 1:]
+            if target in names and target != zone_name:
+                return target
+
+        for name in sorted(names):  # a hard link to the canonical file
+            if name == zone_name:
+                continue
+            try:
+                if os.path.samefile(path, os.path.join(zdir, name)):
+                    return name
+            except OSError:
+                continue
     return None
 
 
@@ -151,6 +217,12 @@ def _local_utc_offset_minutes(day: date) -> int:
 def _coordinates_for_zone(zone: str) -> Optional[Tuple[float, float]]:
     """Cached zone.tab lookup (the file is only read once per zone)."""
     coords = zone_coordinates(zone)
+    if coords is None:
+        canonical = resolve_zone_alias(zone)  # e.g. US/Central -> America/Chicago
+        if canonical is not None:
+            coords = zone_coordinates(canonical)
+            if coords is not None:
+                logger.info("Timezone %s is a link to %s", zone, canonical)
     if coords is None:
         logger.info("Sun times unavailable: no coordinates for timezone %s", zone)
         return None
