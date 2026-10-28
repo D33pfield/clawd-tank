@@ -29,6 +29,7 @@ typedef enum {
     BLE_EVT_SET_SESSIONS,
     BLE_EVT_CONNECTED,
     BLE_EVT_DISCONNECTED,
+    BLE_EVT_BUTTON_PRESS,  /* BOOT button: wakes a sleeping display, else clears notifications */
 } ble_evt_type_t;
 
 typedef struct {

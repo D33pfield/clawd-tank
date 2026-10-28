@@ -62,7 +62,7 @@ cd simulator && cmake -B build-static -DSTATIC_SDL2=ON && cmake --build build-st
 ./simulator/build/clawd-tank-sim --headless --listen
 ```
 
-Interactive keys: `c`=connect, `d`=disconnect, `n`=notify, `1-8`=dismiss, `x`=clear, `s`=screenshot, `z`=sleep, `q`=quit.
+Interactive keys: `c`=connect, `d`=disconnect, `n`=notify, `1-8`=dismiss, `x`=clear, `b`=BOOT button, `s`=screenshot, `z`=sleep, `q`=quit.
 
 The `--listen` flag starts a TCP server on port 19872 (configurable: `--listen 12345`). The daemon connects via `--sim` or `--sim-only` flags, or via the Simulator submenu in the menu bar app.
 

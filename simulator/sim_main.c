@@ -455,6 +455,12 @@ static void handle_sdl_events(void)
                 printf("[key] clear all\n");
                 break;
             }
+            case SDLK_b: {
+                ble_evt_t evt = { .type = BLE_EVT_BUTTON_PRESS };
+                ui_manager_handle_event(&evt);
+                printf("[key] BOOT button\n");
+                break;
+            }
             case SDLK_s: {
                 sim_screenshot_init(".");
                 sim_screenshot_capture(sim_display_get_framebuffer(),

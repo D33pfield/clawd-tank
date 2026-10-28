@@ -68,6 +68,11 @@ void ui_manager_refresh_backlight(void)
     s_sky_dirty = true;  /* applied on the next ui_manager_tick() */
 }
 
+/* While asleep, the BOOT button lights the screen for this long. */
+#define SLEEP_PEEK_MS 20000
+static bool s_peeking = false;
+static uint32_t s_peek_start_tick = 0;
+
 static void scene_animate_width(int target_px, int anim_ms)
 {
     if (!s_scene) return;
@@ -158,6 +163,14 @@ static void transition_to(ui_state_t new_state)
         scene_set_clawd_anim(s_scene, CLAWD_ANIM_DISCONNECTED);
         break;
     }
+}
+
+static void clear_notifications(void)
+{
+    ESP_LOGI(TAG, "Clear all");
+    notif_store_clear(&s_store);
+    transition_to(UI_STATE_FULL_IDLE);
+    s_last_activity_tick = lv_tick_get();
 }
 
 /* ---------- Init ---------- */
@@ -253,10 +266,20 @@ void ui_manager_handle_event(const ble_evt_t *evt)
         break;
 
     case BLE_EVT_NOTIF_CLEAR:
-        ESP_LOGI(TAG, "Clear all");
-        notif_store_clear(&s_store);
-        transition_to(UI_STATE_FULL_IDLE);
-        s_last_activity_tick = lv_tick_get();
+        clear_notifications();
+        break;
+
+    case BLE_EVT_BUTTON_PRESS:
+        if (s_display_status == DISPLAY_STATUS_SLEEPING) {
+            /* The host decides when we sleep and only wakes us when a session
+             * starts, so let the button light the screen for a short peek. */
+            ESP_LOGI(TAG, "Button: waking display for %d s", SLEEP_PEEK_MS / 1000);
+            s_peeking = true;
+            s_peek_start_tick = lv_tick_get();
+            apply_backlight();
+        } else {
+            clear_notifications();
+        }
         break;
 
     case BLE_EVT_SET_SESSIONS: {
@@ -337,6 +360,16 @@ void ui_manager_tick(void)
 
     /* Scene animation tick (sprite frame advance, star twinkle) */
     scene_tick(s_scene);
+
+    /* End a BOOT-button peek: go dark again, unless the host woke us for real. */
+    if (s_peeking) {
+        if (s_display_status != DISPLAY_STATUS_SLEEPING) {
+            s_peeking = false;
+        } else if (lv_tick_elaps(s_peek_start_tick) >= SLEEP_PEEK_MS) {
+            s_peeking = false;
+            display_set_brightness(0);
+        }
+    }
 
     /* Time update: check once per tick, update when minute changes */
     struct timeval tv;
