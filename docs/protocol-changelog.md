@@ -35,7 +35,12 @@ The original protocol. No version characteristic — the daemon infers v1 from i
 
 **Characteristics:**
 - **Notification** (`71FFB137-8B7A-47C9-9A7A-4B1B16662D9A`) — write-only. Accepts JSON payloads.
-- **Config** (`E9F6E626-5FCA-4201-B80C-4D2B51C40F51`) — read/write. JSON config (brightness, etc.)
+- **Config** (`E9F6E626-5FCA-4201-B80C-4D2B51C40F51`) — read/write. JSON config. Writes may contain any subset of the keys; missing keys are left unchanged. Reads return all keys:
+  - `brightness` — backlight duty, 0–255 (default 102)
+  - `sleep_timeout` — seconds, 0–3600 (default 300; stored only, the host decides when to sleep)
+  - `day_night` — boolean, default `false`. When `true` the sky, grass, clock and stars follow the time of day (dawn/day/dusk/night) and the backlight is scaled by it (dimmer at night, capped at duty 127 = 50%). When `false` the scene stays on its fixed night look and the backlight is exactly `brightness`.
+
+  A read may end with one trailing space (valid JSON whitespace; parse it normally). The firmware adds it when the response would otherwise be an ACL packet of exactly 64 bytes, which stalls on full-speed USB Bluetooth adapters (64-byte bulk endpoints), including through usbipd.
 
 **Actions (JSON written to notification characteristic):**
 

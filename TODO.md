@@ -33,12 +33,25 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
   Pure logic is unit tested (`firmware/test/test_daynight.c`), including smoothness over all 1440 minutes.
 - [x] **Backlight follows the cycle** — `daynight_backlight()` scales the configured brightness (35% at
   night → 100% by day), floors at duty 12 while awake, and caps at duty 127 (50%, Waveshare's limit).
-  Host brightness writes now go through `ui_manager_refresh_backlight()` so they are scaled too.
-- [x] Test builds can pin the time of day with `-DDAYNIGHT_FORCE_MINUTE=<minute-of-day>`
+  Host brightness writes now go through `ui_manager_config_changed()` so they are scaled too.
+- [x] **Opt-in** — the cycle is controlled by the `day_night` config key (NVS-backed, default **off**:
+  fixed night scene + raw brightness, identical to the old behavior). Toggle it from
+  `tools/ble_interactive.py` (`t`), or write `{"day_night":true}` to the config characteristic.
+  The simulator's config paths share one `sim_apply_config()` helper.
+- [x] Test builds can pin the time of day with `-DDAYNIGHT_FORCE_MINUTE=<minute-of-day>` (the cycle
+  must be enabled, e.g. `config {"day_night":true}`)
   (e.g. `idf.py -B build-daylight -DCMAKE_C_FLAGS=-DDAYNIGHT_FORCE_MINUTE=720 build`).
 - [x] Fixed `make test`: the `esp_log.h` test stub dropped the `TAG` argument, so newer GCC failed
   `config_store.c` with `-Werror=unused-variable`.
 - [ ] Follow-ups: seasonal sunrise/sunset times; make the schedule configurable over BLE.
+- [x] **BLE read workaround** — a config read whose ATT response made an ACL packet of exactly 64 bytes
+  (value length 55, e.g. `day_night` on with the default brightness/sleep values) never reached the host
+  on a full-speed USB Bluetooth adapter (64-byte bulk endpoints, here through usbipd): the read hung until
+  the 30 s ATT timeout and the link dropped. The firmware's callback was fine (verified via serial log).
+  `config_access_cb` now pads such responses with a trailing space. Found by sweeping JSON lengths
+  51–57; only 55 hung.
+- Known limitation: the daemon sends a fixed UTC offset (no DST rules) with `set_time`, so the clock —
+  and therefore the sky — is off by an hour after a DST change until the next BLE reconnect.
 - Note: building the firmware needs LVGL 9.5.0. With ESP-IDF's offline component snapshot set by `eim`
   (`IDF_COMPONENT_LOCAL_STORAGE_URL`) the manager resolves a stale 9.2.0; unset it, and pin 9.5.0 in
   the (gitignored) `dependencies.lock`. `^9.2` alone now resolves to 9.6.0.

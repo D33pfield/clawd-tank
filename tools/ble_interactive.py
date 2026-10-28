@@ -53,6 +53,7 @@ HELP = """\
 ║    \033[1;37m9\033[0;36m  — Set brightness to maximum (255)                     \033[1;36m║
 ║    \033[1;37ms\033[0;36m  — Set sleep timeout to 10s (quick test)               \033[1;36m║
 ║    \033[1;37mS\033[0;36m  — Set sleep timeout to 5min (default)                 \033[1;36m║
+║    \033[1;37mt\033[0;36m  — Toggle the day/night cycle (default: off)           \033[1;36m║
 ║                                                              ║
 ║  \033[1;33mScenarios\033[0;36m                                                  \033[1;36m║
 ║    \033[1;37m1\033[0;36m  — Burst: 3 notifications, 500ms apart                 \033[1;36m║
@@ -75,6 +76,7 @@ class InteractiveTester:
         self.next_preset = 0
         self.active_ids: list[str] = []  # track added notification IDs in order
         self.brightness = 128  # assumed starting value
+        self.day_night = False  # updated from the device's config on connect / 'r'
         self.running = True
 
     def log(self, msg: str, color: str = "0"):
@@ -126,6 +128,7 @@ class InteractiveTester:
         config = json.loads(data.decode("utf-8"))
         self.log_ok(f"Config: {json.dumps(config, indent=2)}")
         self.brightness = config.get("brightness", self.brightness)
+        self.day_night = config.get("day_night", self.day_night)
 
     # -- Actions --
 
@@ -196,6 +199,11 @@ class InteractiveTester:
         await self.send_config({"sleep_timeout": 300})
         self.log_ok("Sleep timeout: 5min (default)")
 
+    async def toggle_day_night(self):
+        self.day_night = not self.day_night
+        await self.send_config({"day_night": self.day_night})
+        self.log_ok(f"Day/night cycle: {'on' if self.day_night else 'off'}")
+
     # -- Scenarios --
 
     async def scenario_burst(self):
@@ -262,6 +270,7 @@ class InteractiveTester:
             "9": self.brightness_max,
             "s": self.sleep_quick,
             "S": self.sleep_default,
+            "t": self.toggle_day_night,
             "1": self.scenario_burst,
             "2": self.scenario_fill_drain,
             "3": self.scenario_reconnect,
@@ -320,6 +329,10 @@ async def main():
         sys.exit(1)
 
     print(HELP)
+    try:
+        await tester.read_config()  # so toggles start from the device's real state
+    except Exception as e:  # older firmware, or a flaky read: not fatal
+        tester.log_warn(f"Could not read config: {e}")
     print("\n\033[1;36mReady! Press keys to send commands.\033[0m\n")
 
     try:
