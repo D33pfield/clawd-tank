@@ -37,7 +37,16 @@ Custom app icon. Proactive BLE reconnection with full state sync on disconnect.
 - [x] **Opt-in** — the cycle is controlled by the `day_night` config key (NVS-backed, default **off**:
   fixed night scene + raw brightness, identical to the old behavior). Toggle it from
   `tools/ble_interactive.py` (`t`), or write `{"day_night":true}` to the config characteristic.
-  The simulator's config paths share one `sim_apply_config()` helper.
+  The simulator's config paths share one `sim_apply_config()` helper. With the cycle off the UI tick does
+  no per-minute work at all (it used to re-apply the palette and backlight, and log, every minute); a
+  config change still gets applied once. One deliberate difference from before: a brightness write while
+  the display is asleep is applied on wake instead of lighting the backlight immediately.
+- [x] **Edge-of-day sun times** — a sunrise before 01:30 or a sunset after 22:00 (midnight-sun days, e.g.
+  Reykjavik in June gives sunset 24:00) is treated as 01:30 / 22:00 so each fade fits inside one day;
+  before, the dusk-to-night fade was squeezed into the last minute and the sky snapped at midnight
+  (a 198-level step). Covered by `test_midnight_sun_days_do_not_snap` and an extended smoothness sweep.
+- [x] The daemon's sun-time coordinate cache is keyed by timezone name, so a host that changes timezone
+  while the daemon runs follows it.
 - [x] Test builds can pin the time of day with `-DDAYNIGHT_FORCE_MINUTE=<minute-of-day>` (the cycle
   must be enabled, e.g. `config {"day_night":true}`)
   (e.g. `idf.py -B build-daylight -DCMAKE_C_FLAGS=-DDAYNIGHT_FORCE_MINUTE=720 build`).
