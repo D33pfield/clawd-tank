@@ -255,7 +255,7 @@ static int config_access_cb(uint16_t conn_handle, uint16_t attr_handle,
             int val = brightness->valueint;
             if (val >= 0 && val <= 255) {
                 config_store_set_brightness((uint8_t)val);
-                display_set_brightness((uint8_t)val);
+                ui_manager_refresh_backlight();
                 ESP_LOGI(TAG, "Config: brightness=%d", val);
             }
         }

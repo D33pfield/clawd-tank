@@ -1,5 +1,6 @@
 #pragma once
 #include "lvgl.h"
+#include "daynight.h"
 
 typedef struct scene_t scene_t;
 
@@ -31,6 +32,8 @@ void scene_set_clawd_anim(scene_t *scene, clawd_anim_id_t anim);
 void scene_set_fallback_anim(scene_t *scene, clawd_anim_id_t anim);
 void scene_set_time_visible(scene_t *scene, bool visible);
 void scene_update_time(scene_t *scene, int hour, int minute);
+/* Apply the sky/grass/clock colors and star fade for the time of day. */
+void scene_set_daynight(scene_t *scene, const daynight_palette_t *p);
 void scene_tick(scene_t *scene);
 bool scene_is_playing_oneshot(scene_t *scene);
 bool scene_is_multi_session(scene_t *scene);

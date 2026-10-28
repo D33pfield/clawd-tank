@@ -45,6 +45,7 @@
 #define STAR_COUNT         6
 #define STAR_TWINKLE_MIN   2000
 #define STAR_TWINKLE_MAX   4000
+#define TUFT_COUNT         7
 #define TRANSPARENT_KEY    0x18C5
 
 /* Frame timing in ms per animation */
@@ -325,9 +326,12 @@ struct scene_t {
     /* Stars */
     lv_obj_t *stars[STAR_COUNT];
     uint32_t star_next_toggle[STAR_COUNT];
+    bool star_high[STAR_COUNT];  /* twinkle phase: bright or dim */
+    uint8_t star_alpha;          /* daylight fade, 0 (day) - 255 (night) */
 
     /* Grass */
     lv_obj_t *grass;
+    lv_obj_t *tufts[TUFT_COUNT];
 
     /* Clawd sprite slots (1 per visible session) */
     clawd_slot_t slots[MAX_SLOTS];
@@ -529,7 +533,9 @@ scene_t *scene_create(lv_obj_t *parent)
         lv_obj_set_style_bg_color(s->stars[i], star_cfg[i].color, 0);
         lv_obj_set_style_radius(s->stars[i], star_cfg[i].size / 2, 0);
         s->star_next_toggle[i] = now + random_range(STAR_TWINKLE_MIN, STAR_TWINKLE_MAX);
+        s->star_high[i] = true;
     }
+    s->star_alpha = 255;
 
     /* Grass strip at bottom */
     s->grass = lv_obj_create(s->container);
@@ -545,8 +551,10 @@ scene_t *scene_create(lv_obj_t *parent)
     static const struct { int x; int w; } tufts[] = {
         {8, 3}, {25, 2}, {50, 4}, {78, 2}, {100, 3}, {130, 2}, {155, 3},
     };
-    for (int i = 0; i < (int)(sizeof(tufts) / sizeof(tufts[0])); i++) {
+    _Static_assert(sizeof(tufts) / sizeof(tufts[0]) == TUFT_COUNT, "TUFT_COUNT mismatch");
+    for (int i = 0; i < TUFT_COUNT; i++) {
         lv_obj_t *tuft = lv_obj_create(s->grass);
+        s->tufts[i] = tuft;
         lv_obj_remove_style_all(tuft);
         lv_obj_set_size(tuft, tufts[i].w, 3);
         lv_obj_set_pos(tuft, tufts[i].x, 0);
@@ -835,6 +843,32 @@ void scene_update_time(scene_t *scene, int hour, int minute)
     lv_label_set_text_fmt(scene->time_label, "%02d:%02d", hour, minute);
 }
 
+/* Star opacity = twinkle phase (bright/dim) scaled by the daylight fade. */
+static void star_apply_opa(scene_t *scene, int i)
+{
+    int base = scene->star_high[i] ? LV_OPA_COVER : LV_OPA_30;
+    lv_obj_set_style_bg_opa(scene->stars[i], (lv_opa_t)(base * scene->star_alpha / 255), 0);
+}
+
+void scene_set_daynight(scene_t *scene, const daynight_palette_t *p)
+{
+    if (!scene || !p) return;
+
+    lv_obj_set_style_bg_color(scene->sky, lv_color_hex(p->sky_top), 0);
+    lv_obj_set_style_bg_grad_color(scene->sky, lv_color_hex(p->sky_bottom), 0);
+    lv_obj_set_style_bg_color(scene->grass, lv_color_hex(p->grass_top), 0);
+    lv_obj_set_style_bg_grad_color(scene->grass, lv_color_hex(p->grass_bottom), 0);
+    for (int i = 0; i < TUFT_COUNT; i++) {
+        lv_obj_set_style_bg_color(scene->tufts[i], lv_color_hex(p->tuft), 0);
+    }
+    lv_obj_set_style_text_color(scene->time_label, lv_color_hex(p->clock_text), 0);
+
+    scene->star_alpha = p->star_alpha;
+    for (int i = 0; i < STAR_COUNT; i++) {
+        star_apply_opa(scene, i);
+    }
+}
+
 /* ---------- Tick (call from UI loop) ---------- */
 
 void scene_tick(scene_t *scene)
@@ -928,9 +962,8 @@ void scene_tick(scene_t *scene)
     /* Star twinkle */
     for (int i = 0; i < STAR_COUNT; i++) {
         if (now >= scene->star_next_toggle[i]) {
-            lv_opa_t cur = lv_obj_get_style_bg_opa(scene->stars[i], 0);
-            lv_opa_t next = (cur > LV_OPA_50) ? LV_OPA_30 : LV_OPA_COVER;
-            lv_obj_set_style_bg_opa(scene->stars[i], next, 0);
+            scene->star_high[i] = !scene->star_high[i];
+            star_apply_opa(scene, i);
             scene->star_next_toggle[i] = now + random_range(STAR_TWINKLE_MIN, STAR_TWINKLE_MAX);
         }
     }

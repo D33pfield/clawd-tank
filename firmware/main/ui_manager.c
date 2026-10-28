@@ -52,6 +52,22 @@ static uint32_t s_last_activity_tick = 0;
 static display_status_t s_display_status = DISPLAY_STATUS_IDLE;
 static int s_last_minute = -1;
 
+/* Time of day driving the sky and backlight (see daynight.c). */
+static int s_sky_minute = 0;            /* minutes since midnight; night until time is synced */
+static int s_last_sky_minute = -1;
+static volatile bool s_sky_dirty = false;  /* set from other tasks to force a refresh */
+
+/* Backlight for the current time of day, scaled from the configured brightness. */
+static void apply_backlight(void)
+{
+    display_set_brightness(daynight_backlight(s_sky_minute, config_store_get_brightness()));
+}
+
+void ui_manager_refresh_backlight(void)
+{
+    s_sky_dirty = true;  /* applied on the next ui_manager_tick() */
+}
+
 static void scene_animate_width(int target_px, int anim_ms)
 {
     if (!s_scene) return;
@@ -251,7 +267,7 @@ void ui_manager_handle_event(const ble_evt_t *evt)
 
         /* Wake from sleep if needed */
         if (s_display_status == DISPLAY_STATUS_SLEEPING) {
-            display_set_brightness(config_store_get_brightness());
+            apply_backlight();
         }
         s_display_status = DISPLAY_STATUS_IDLE;
 
@@ -280,7 +296,7 @@ void ui_manager_handle_event(const ble_evt_t *evt)
         if (new_status == DISPLAY_STATUS_SLEEPING && old_status != DISPLAY_STATUS_SLEEPING) {
             display_set_brightness(0);
         } else if (new_status != DISPLAY_STATUS_SLEEPING && old_status == DISPLAY_STATUS_SLEEPING) {
-            display_set_brightness(config_store_get_brightness());
+            apply_backlight();
         }
 
         /* Don't interrupt a playing oneshot — the fallback will take effect when it finishes */
@@ -323,12 +339,32 @@ void ui_manager_tick(void)
     scene_tick(s_scene);
 
     /* Time update: check once per tick, update when minute changes */
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm tm;
+    localtime_r(&tv.tv_sec, &tm);
+    int cur_minute = tm.tm_hour * 60 + tm.tm_min;
+
+    /* Sky + backlight follow the time of day, in every UI state. A pending
+     * brightness change from the host also lands here (s_sky_dirty). */
+#ifdef DAYNIGHT_FORCE_MINUTE
+    int sky_minute = DAYNIGHT_FORCE_MINUTE;  /* test builds: pin the time of day */
+#else
+    int sky_minute = cur_minute;
+#endif
+    if (sky_minute != s_last_sky_minute || s_sky_dirty) {
+        s_last_sky_minute = sky_minute;
+        s_sky_dirty = false;
+        s_sky_minute = sky_minute;
+        daynight_palette_t pal;
+        daynight_palette(sky_minute, &pal);
+        scene_set_daynight(s_scene, &pal);
+        if (s_display_status != DISPLAY_STATUS_SLEEPING) {
+            apply_backlight();
+        }
+    }
+
     if (s_state != UI_STATE_NOTIFICATION && s_state != UI_STATE_DISCONNECTED) {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm tm;
-        localtime_r(&tv.tv_sec, &tm);
-        int cur_minute = tm.tm_hour * 60 + tm.tm_min;
         if (cur_minute != s_last_minute) {
             s_last_minute = cur_minute;
             scene_update_time(s_scene, tm.tm_hour, tm.tm_min);
