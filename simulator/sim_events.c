@@ -2,6 +2,7 @@
 #include "ble_service.h"
 #include "ui_manager.h"
 #include "config_store.h"
+#include "sim_ble_parse.h"
 #include "scene.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -115,16 +116,7 @@ void sim_events_init_inline(const char *events_str)
             /* Parse and apply config directly */
             cJSON *json = cJSON_Parse(json_str);
             if (json) {
-                cJSON *brightness = cJSON_GetObjectItem(json, "brightness");
-                if (brightness && cJSON_IsNumber(brightness)) {
-                    config_store_set_brightness((uint8_t)brightness->valueint);
-                    printf("[sim] Config: brightness=%d\n", brightness->valueint);
-                }
-                cJSON *sleep_t = cJSON_GetObjectItem(json, "sleep_timeout");
-                if (sleep_t && cJSON_IsNumber(sleep_t)) {
-                    config_store_set_sleep_timeout((uint16_t)sleep_t->valueint);
-                    printf("[sim] Config: sleep_timeout=%d (daemon-driven, stored only)\n", sleep_t->valueint);
-                }
+                sim_apply_config(json, "sim");
                 cJSON_Delete(json);
             }
         }

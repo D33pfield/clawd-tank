@@ -3,11 +3,32 @@
 #include "cJSON.h"
 #include "config_store.h"
 #include "scene.h"
+#include "ui_manager.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
 #include <stdlib.h>
+
+void sim_apply_config(const cJSON *json, const char *tag) {
+    const cJSON *brightness = cJSON_GetObjectItem(json, "brightness");
+    if (brightness && cJSON_IsNumber(brightness)) {
+        config_store_set_brightness((uint8_t)brightness->valueint);
+        ui_manager_config_changed();
+        printf("[%s] Config: brightness=%d\n", tag, brightness->valueint);
+    }
+    const cJSON *sleep_t = cJSON_GetObjectItem(json, "sleep_timeout");
+    if (sleep_t && cJSON_IsNumber(sleep_t)) {
+        config_store_set_sleep_timeout((uint16_t)sleep_t->valueint);
+        printf("[%s] Config: sleep_timeout=%d (daemon-driven, stored only)\n", tag, sleep_t->valueint);
+    }
+    const cJSON *day_night = cJSON_GetObjectItem(json, "day_night");
+    if (day_night && cJSON_IsBool(day_night)) {
+        config_store_set_day_night(cJSON_IsTrue(day_night));
+        ui_manager_config_changed();
+        printf("[%s] Config: day_night=%s\n", tag, cJSON_IsTrue(day_night) ? "on" : "off");
+    }
+}
 
 static int parse_anim_name(const char *str) {
     if (strcmp(str, "idle") == 0)     return CLAWD_ANIM_IDLE;

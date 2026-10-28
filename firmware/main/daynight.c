@@ -43,6 +43,12 @@ static uint8_t mix_u8(uint8_t a, uint8_t b, int num, int den)
     return (uint8_t)(a + ((int)b - (int)a) * num / den);
 }
 
+void daynight_night_palette(daynight_palette_t *out)
+{
+    static const daynight_palette_t night = NIGHT;
+    *out = night;
+}
+
 void daynight_palette(int minute_of_day, daynight_palette_t *out)
 {
     int minute = ((minute_of_day % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;

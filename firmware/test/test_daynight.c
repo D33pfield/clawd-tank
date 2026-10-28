@@ -43,6 +43,22 @@ static void test_night_and_day_anchors(void)
     assert(p.sky_top == q.sky_top && p.star_alpha == 255);
 }
 
+static void test_night_palette_is_the_original_scene(void)
+{
+    /* The fixed night look used when the cycle is off must stay the scene's
+     * original colors, and match the cycle's own midnight. */
+    daynight_palette_t n, m;
+    daynight_night_palette(&n);
+    assert(n.sky_top == 0x0a0e1a && n.sky_bottom == 0x1a1a2e);
+    assert(n.grass_top == 0x2d4a2d && n.grass_bottom == 0x1a331a);
+    assert(n.tuft == 0x3d6a3d && n.clock_text == 0x4466aa);
+    assert(n.star_alpha == 255);
+
+    daynight_palette(HM(0, 0), &m);
+    assert(n.sky_top == m.sky_top && n.sky_bottom == m.sky_bottom);
+    assert(n.grass_top == m.grass_top && n.clock_text == m.clock_text);
+}
+
 static void test_wraps_around_midnight(void)
 {
     daynight_palette_t a, b;
@@ -96,6 +112,7 @@ static void test_backlight(void)
 int main(void)
 {
     test_night_and_day_anchors();
+    test_night_palette_is_the_original_scene();
     test_wraps_around_midnight();
     test_no_visible_jumps();
     test_backlight();
