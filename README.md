@@ -38,6 +38,8 @@ Claude Code hooks --> clawd-tank-notify --> daemon --> BLE --> ESP32-C6 display
 
 Optional: the daemon can also mirror state to a Garmin watch app through an HTTPS relay — see [docs/garmin-transport.md](docs/garmin-transport.md).
 
+Optional: it can also publish v2 session state for the Android bridge app, which acts as the board's BLE central instead of the PC — see [docs/phone-transport.md](docs/phone-transport.md).
+
 ## Hardware
 
 - **Board**: [Waveshare ESP32-C6-LCD-1.47](https://s.click.aliexpress.com/e/_c4PGS55v)
