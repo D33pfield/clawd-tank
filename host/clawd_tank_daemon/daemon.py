@@ -19,6 +19,7 @@ from .protocol import (
     display_state_to_v1_payload,
 )
 from .garmin_client import GarminClient, load_config as load_garmin_config
+from .phone_client import PhoneClient, load_config as load_phone_config
 from .sim_client import SimClient, SIM_DEFAULT_PORT
 from .socket_server import SocketServer
 from .sun import todays_sun_times
@@ -174,6 +175,16 @@ class ClawdDaemon:
                     on_connect_cb=lambda: self._on_transport_connect("garmin"),
                 )
                 self._transport_queues["garmin"] = asyncio.Queue()
+
+            phone_cfg = load_phone_config()
+            if phone_cfg:
+                self._transports["phone"] = PhoneClient(
+                    phone_cfg["url"],
+                    phone_cfg["token"],
+                    on_disconnect_cb=lambda: self._on_transport_disconnect("phone"),
+                    on_connect_cb=lambda: self._on_transport_connect("phone"),
+                )
+                self._transport_queues["phone"] = asyncio.Queue()
         # Menu bar mode (headless=False): transports added later via add_transport()
 
         self._sender_tasks: dict[str, asyncio.Task] = {}
