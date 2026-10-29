@@ -56,13 +56,15 @@ async def test_caps_sessions_and_ignores_garbage():
 
 
 def test_snapshot_under_relay_cap_worst_case():
+    # Relay cap is 4096 bytes. Control characters are the worst case: ensure_ascii=False
+    # still escapes them as 6-byte \\u00XX sequences.
     client = PhoneClient("http://127.0.0.1:1/p", "tok")
     client._anims = ["confused"] * 4
     client._ids = [10**9] * 4
     for i in range(4):
-        client._notifications[str(i)] = {"id": "x" * 40, "p": "é" * 24, "m": "é" * 60, "e": 1}
+        client._notifications[str(i)] = {"id": "x" * 40, "p": "\x1b" * 24, "m": "\x1b" * 60, "e": 1}
     body = json.dumps(client._snapshot(), separators=(",", ":"), ensure_ascii=False).encode()
-    assert len(body) < 2048
+    assert len(body) < 4096
 
 
 def test_load_config_uses_phone_path(tmp_path):
