@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Phone relay transport** — The daemon can publish protocol v2 session state (per-session animations, ids, subagent count, cards) to an HTTPS relay for the Android bridge app, which then drives the board over BLE. Configure with `~/.clawd-tank/phone.json`. See [docs/phone-transport.md](docs/phone-transport.md).
+
 ## [1.4.1] - 2026-04-16
 
 ### Fixed
