@@ -36,6 +36,8 @@ Claude Code hooks --> clawd-tank-notify --> daemon --> BLE --> ESP32-C6 display
 | `host/` | Background daemon, Claude Code hook handler, macOS menu bar app | Python |
 | `tools/` | Sprite pipeline (SVG to PNG to RLE-compressed RGB565), GIF recorder, BLE debugging | Python |
 
+Optional: the daemon can also mirror state to a Garmin watch app through an HTTPS relay — see [docs/garmin-transport.md](docs/garmin-transport.md).
+
 ## Hardware
 
 - **Board**: [Waveshare ESP32-C6-LCD-1.47](https://s.click.aliexpress.com/e/_c4PGS55v)
