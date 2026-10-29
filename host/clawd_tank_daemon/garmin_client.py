@@ -51,8 +51,9 @@ def _url_ok(url) -> bool:
     return parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost", "::1")
 
 
-def load_config(path: Path = CONFIG_PATH) -> dict | None:
+def load_config(path: Path | None = None) -> dict | None:
     """Return the config dict if present, valid and enabled, else None."""
+    path = path if path is not None else CONFIG_PATH  # read at call time so tests can redirect it
     try:
         cfg = json.loads(path.read_text())
         mode = path.stat().st_mode
