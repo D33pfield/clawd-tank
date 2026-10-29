@@ -14,7 +14,7 @@ Create `~/.clawd-tank/phone.json` (mode 600) and restart the daemon:
 {"url": "https://example.com/clawd/phone", "token": "<relay write token>", "enabled": true}
 ```
 
-Rules are the same as `garmin.json` (https only, http for localhost, no redirects, 600 permissions). Use a separate URL from the Garmin one. Only headless mode reads this file.
+The relay's `/clawd/phone` accepts bodies up to 4096 bytes (nginx allows 4k). Rules are the same as `garmin.json` (https only, http for localhost, no redirects, 600 permissions). Use a separate URL from the Garmin one. Only headless mode reads this file.
 
 ## Behaviour (`host/clawd_tank_daemon/phone_client.py`)
 
@@ -36,7 +36,7 @@ Rules are the same as `garmin.json` (https only, http for localhost, no redirect
 
 - `status` is `null` while sessions are shown, or `"sleeping"` (and `anims`/`ids` empty) when the board should sleep. A `set_sessions` payload clears it.
 - `anims`, `ids`, `subagents` and `overflow` are the `set_sessions` fields from `protocol-changelog.md`, forwarded as is. `overflow` is omitted when 0. At most 4 sessions.
-- `cards` are the newest 4 notifications, newest first. `id` is the `add`/`dismiss` id, `e` is 1 for error alerts (`alert: "error"`). Strings use the Garmin limits; the worst case stays under 2 KB.
+- `cards` are the newest 4 notifications, newest first. `id` is the `add`/`dismiss` id, `e` is 1 for error alerts (`alert: "error"`). Strings use the Garmin limits; the worst case (control characters, which JSON escapes to 6 bytes each) is about 3.3 KB, under the phone endpoint's 4 KB body cap.
 - On daemon shutdown it posts `{"v": 2, "status": "sleeping", ...}` with no sessions or cards.
 
 ## Phone side
