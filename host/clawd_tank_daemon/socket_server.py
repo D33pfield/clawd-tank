@@ -16,9 +16,10 @@ class SocketServer:
     """Listens on a Unix socket for JSON messages from clawd-tank-notify."""
 
     def __init__(self, on_message: Callable[[dict], Awaitable[None]],
-                 socket_path: Path = SOCKET_PATH):
+                 socket_path: Path | None = None):
         self._on_message = on_message
-        self._socket_path = socket_path
+        # Resolved at call time (not bound as a default) so tests can redirect SOCKET_PATH.
+        self._socket_path = socket_path if socket_path is not None else SOCKET_PATH
         self._server: asyncio.Server | None = None
 
     async def start(self) -> None:
