@@ -3,6 +3,8 @@
 import pytest
 
 import clawd_tank_daemon.garmin_client as garmin_client
+import clawd_tank_daemon.now_playing as now_playing
+import clawd_tank_daemon.phone_client as phone_client
 import clawd_tank_daemon.session_store as session_store
 import clawd_tank_daemon.socket_server as socket_server
 
@@ -22,7 +24,10 @@ def _isolate_live_files(tmp_path, monkeypatch):
 
     SocketServer deletes its socket path on start and stop, so a test using the real
     ~/.clawd-tank/sock silently disconnects every Claude Code hook from a running daemon.
-    The Garmin config holds a relay token; tests must never load the real one.
+    The Garmin and phone configs hold relay tokens; tests must never load the real ones.
+    A real music.json would start powershell.exe from every daemon test.
     """
     monkeypatch.setattr(socket_server, "SOCKET_PATH", tmp_path / "sock")
     monkeypatch.setattr(garmin_client, "CONFIG_PATH", tmp_path / "garmin.json")
+    monkeypatch.setattr(phone_client, "CONFIG_PATH", tmp_path / "phone.json")
+    monkeypatch.setattr(now_playing, "CONFIG_PATH", tmp_path / "music.json")

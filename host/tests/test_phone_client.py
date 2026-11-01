@@ -78,8 +78,46 @@ def test_snapshot_under_relay_cap_worst_case():
     client._names = ["\x1b" * 24] * 4
     for i in range(4):
         client._notifications[str(i)] = {"id": "x" * 40, "p": "\x1b" * 24, "m": "\x1b" * 60, "e": 1}
-    body = json.dumps(client._snapshot(), separators=(",", ":"), ensure_ascii=False).encode()
+    client._subagents = client._overflow = 99
+    # Music text is control-stripped by now_playing.clean_text, so 4-byte UTF-8 is its worst case.
+    client.set_music({"playing": False, "artist": "\U0001F3B5" * 60, "title": "\U0001F3B5" * 60, "track": 2**31 - 1})
+    snap = client._snapshot()
+    assert "music" in snap
+    body = json.dumps(snap, separators=(",", ":"), ensure_ascii=False).encode()
     assert len(body) < 4096
+
+
+def test_music_dropped_rather_than_overflowing_the_cap():
+    client = PhoneClient("http://127.0.0.1:1/p", "tok")
+    client._notifications["0"] = {"id": "x", "p": "", "m": "\x1b" * 665, "e": 1}  # near the cap on purpose
+    client.set_music({"playing": True, "artist": "a", "title": "t", "track": 1})
+    assert "music" not in client._snapshot()
+    assert "cards" in client._snapshot()
+
+
+@pytest.mark.asyncio
+async def test_music_rides_along_and_posts_only_on_change():
+    server, received = start_relay()
+    client = PhoneClient(f"http://127.0.0.1:{server.server_port}/p", "tok", debounce=0.01)
+    await client.connect()
+    await settle(received, 1)
+    assert "music" not in received[-1][1]
+    music = {"playing": True, "artist": "A", "title": "T", "track": 5}
+    client.set_music(music)
+    await settle(received, 2)
+    assert received[-1][1]["music"] == music
+    n = len(received)
+    client.set_music(dict(music))  # same state again (the reader's heartbeat): no post
+    await asyncio.sleep(0.1)
+    assert len(received) == n
+    client.set_music(None)
+    await settle(received, n + 1)
+    assert "music" not in received[-1][1]
+    client.set_music(music)
+    await settle(received, n + 2)
+    await client.disconnect()
+    assert "music" not in received[-1][1]  # the shutdown snapshot carries no music
+    server.shutdown()
 
 
 def test_load_config_uses_phone_path(tmp_path):

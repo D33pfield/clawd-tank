@@ -25,6 +25,7 @@ CONFIG_PATH = Path.home() / ".clawd-tank" / "phone.json"
 MAX_SESSIONS = 4
 MAX_CARD_ID = 40
 MAX_NAME = 24
+MAX_BODY = 4096  # the relay's /clawd/phone body cap
 
 
 def load_config(path: Path | None = None) -> dict | None:
@@ -35,9 +36,12 @@ class PhoneClient(GarminClient):
     """Folds daemon payloads into a v2 snapshot:
 
     {"v": 2, "status": null | "sleeping", "anims": [...], "ids": [...], "subagents": n,
-     "overflow": n, "names": [...], "cards": [{"id": ..., "p": ..., "m": ..., "e": 1?}]}
+     "overflow": n, "names": [...], "cards": [{"id": ..., "p": ..., "m": ..., "e": 1?}],
+     "music": {"playing": bool, "artist": str, "title": str, "track": n}}
 
     `names` (the project of each session, aligned with `anims`) is only present when one is known.
+    `music` (what plays on the Windows host, see now_playing.py) is only present while the
+    music reader runs; it is set with set_music() and never reaches the board.
 
     `status` is only set while the board should show a non-session state (sleeping); a
     set_sessions payload clears it, mirroring the firmware.
@@ -51,6 +55,13 @@ class PhoneClient(GarminClient):
         self._names: list[str] = []
         self._subagents = 0
         self._overflow = 0
+        self._music: dict | None = None
+
+    def set_music(self, music: dict | None) -> None:
+        """Latest now-playing state (or None to drop it); posts only when it changed."""
+        if music != self._music:
+            self._music = music
+            self._dirty.set()
 
     async def read_version(self) -> int:
         return 2
@@ -119,4 +130,8 @@ class PhoneClient(GarminClient):
             snap["names"] = self._names
         if self._overflow:
             snap["overflow"] = self._overflow
+        if self._music is not None:
+            snap["music"] = dict(self._music)
+            if len(json.dumps(snap, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > MAX_BODY:
+                del snap["music"]  # never let the extra push the sessions over the relay's cap
         return snap

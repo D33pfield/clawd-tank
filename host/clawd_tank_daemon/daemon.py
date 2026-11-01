@@ -20,6 +20,7 @@ from .protocol import (
 )
 from .garmin_client import GarminClient, load_config as load_garmin_config
 from .phone_client import PhoneClient, load_config as load_phone_config
+from .now_playing import NowPlayingReader, load_config as load_music_config
 from .sim_client import SimClient, SIM_DEFAULT_PORT
 from .socket_server import SocketServer
 from .sun import todays_sun_times
@@ -197,6 +198,13 @@ class ClawdDaemon:
                     on_connect_cb=lambda: self._on_transport_connect("phone"),
                 )
                 self._transport_queues["phone"] = asyncio.Queue()
+        # What plays on the Windows host (WSL only, opt-in); goes to the phone transport only.
+        self._music: Optional[NowPlayingReader] = None
+        phone = self._transports.get("phone")
+        if headless and isinstance(phone, PhoneClient):
+            music_cfg = load_music_config()
+            if music_cfg:
+                self._music = NowPlayingReader(phone.set_music, interval=music_cfg.get("interval", 2))
         # Menu bar mode (headless=False): transports added later via add_transport()
 
         self._sender_tasks: dict[str, asyncio.Task] = {}
@@ -839,6 +847,9 @@ class ClawdDaemon:
             except asyncio.CancelledError:
                 pass
 
+        if self._music is not None:
+            await self._music.stop()
+
         for task in self._sender_tasks.values():
             task.cancel()
         for task in self._sender_tasks.values():
@@ -939,6 +950,8 @@ class ClawdDaemon:
         self._liveness_task = asyncio.create_task(self._liveness_checker())
         self._ble_liveness_task = asyncio.create_task(self._ble_liveness_checker())
         self._time_sync_task = asyncio.create_task(self._daily_time_sync())
+        if self._music is not None:
+            self._music.start()
 
         await self._shutdown_event.wait()
         logger.info("Daemon run() finished")
