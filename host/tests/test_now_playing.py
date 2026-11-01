@@ -129,6 +129,23 @@ async def test_reader_death_drops_music_and_backs_off(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_hung_reader_is_dropped(monkeypatch):
+    monkeypatch.setattr(now_playing, "READ_TIMEOUT", 0.3)
+    monkeypatch.setattr(now_playing, "RESTART_MIN", 60)
+    got = []
+    hang = f"import sys, time; print({PAUSED.strip()!r}, flush=True); time.sleep(30)"
+    reader = NowPlayingReader(got.append, command=[sys.executable, "-c", hang])
+    reader.start()
+    for _ in range(500):  # 0.3 s quiet, then up to STOP_TIMEOUT for stdin close before the kill
+        if None in got:
+            break
+        await asyncio.sleep(0.02)
+    assert reader._proc is None  # ended (killed) before the back-off
+    await reader.stop()
+    assert got[0]["title"] == "Title" and got[1] is None
+
+
+@pytest.mark.asyncio
 async def test_reader_without_powershell_reports_none(monkeypatch):
     monkeypatch.setattr(now_playing, "find_powershell", lambda: None)
     got = []

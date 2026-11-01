@@ -38,6 +38,7 @@ RESTART_MIN = 30  # seconds before restarting a reader that died
 RESTART_MAX = 600
 STABLE_AFTER = 300  # a reader that ran this long resets the restart back-off
 STOP_TIMEOUT = 3
+READ_TIMEOUT = 180  # the script repeats its state every 60 s; silence this long means it hung
 
 
 def load_config(path: Path | None = None) -> dict | None:
@@ -196,9 +197,12 @@ class NowPlayingReader:
         assert self._proc.stdout is not None
         while True:
             try:
-                line = await self._proc.stdout.readline()
+                line = await asyncio.wait_for(self._proc.stdout.readline(), READ_TIMEOUT)
             except ValueError:  # a line over the stream limit
                 continue
+            except asyncio.TimeoutError:
+                logger.warning("Music reader went quiet; restarting it")
+                return  # the caller ends the process and restarts it after the back-off
             if not line:
                 break
             state = parse_line(line)

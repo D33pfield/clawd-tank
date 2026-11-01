@@ -52,7 +52,7 @@ With `~/.clawd-tank/music.json` set to `{"enabled": true}` (optional `"interval"
 - `playing` is true only while playing; paused, stopped and nothing playing are all false. With nothing playing `artist` and `title` are `""`.
 - `artist` and `title`: control characters removed, whitespace collapsed, trimmed, at most 60 characters. `artist` falls back to the album artist.
 - `track` (0 to 2^31-1) goes up by one when a new non-empty artist/title appears (pause, resume or a gap with nothing playing keep it). It starts at a random value, so a daemon restart does not repeat the previous id.
-- `music` is absent when the feature is off, `powershell.exe` is not reachable, or the reader died (it is restarted after 30 s, doubling to 10 min). It never goes to the board, and it is dropped from a snapshot that would otherwise exceed the 4 KB cap.
+- `music` is absent when the feature is off, `powershell.exe` is not reachable, or the reader died or went quiet for 3 min (it is restarted after 30 s, doubling to 10 min). It never goes to the board, and it is dropped from a snapshot that would otherwise exceed the 4 KB cap.
 - A change posts through the usual 0.3 s debounce; an unchanged state does not post. The reader exits when the daemon closes its stdin or dies, so there is no orphan `powershell.exe`. About 1% of one core and ~90 MB for the PowerShell process.
 
 ## Phone side
