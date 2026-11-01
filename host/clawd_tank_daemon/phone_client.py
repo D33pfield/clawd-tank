@@ -24,6 +24,7 @@ logger = logging.getLogger("clawd-tank.phone")
 CONFIG_PATH = Path.home() / ".clawd-tank" / "phone.json"
 MAX_SESSIONS = 4
 MAX_CARD_ID = 40
+MAX_NAME = 24
 
 
 def load_config(path: Path | None = None) -> dict | None:
@@ -34,7 +35,9 @@ class PhoneClient(GarminClient):
     """Folds daemon payloads into a v2 snapshot:
 
     {"v": 2, "status": null | "sleeping", "anims": [...], "ids": [...], "subagents": n,
-     "overflow": n, "cards": [{"id": ..., "p": ..., "m": ..., "e": 1?}]}
+     "overflow": n, "names": [...], "cards": [{"id": ..., "p": ..., "m": ..., "e": 1?}]}
+
+    `names` (the project of each session, aligned with `anims`) is only present when one is known.
 
     `status` is only set while the board should show a non-session state (sleeping); a
     set_sessions payload clears it, mirroring the firmware.
@@ -45,6 +48,7 @@ class PhoneClient(GarminClient):
         self._status: str | None = "sleeping"
         self._anims: list[str] = []
         self._ids: list[int] = []
+        self._names: list[str] = []
         self._subagents = 0
         self._overflow = 0
 
@@ -82,6 +86,9 @@ class PhoneClient(GarminClient):
             n = min(len(anims), len(ids), MAX_SESSIONS)
             self._anims = [str(a)[:MAX_STATUS] for a in anims[:n]]
             self._ids = [int(i) for i in ids[:n]]
+            names = msg.get("names", [])
+            names = names if isinstance(names, list) else []
+            self._names = [str(x)[:MAX_NAME] for x in names[:n]]
             self._subagents = int(msg.get("subagents", 0))
             self._overflow = int(msg.get("overflow", 0))
             self._status = None
@@ -90,7 +97,7 @@ class PhoneClient(GarminClient):
             if status == "sweeping":
                 return True  # oneshot
             self._status = str(status)[:MAX_STATUS]
-            self._anims, self._ids, self._subagents, self._overflow = [], [], 0, 0
+            self._anims, self._ids, self._names, self._subagents, self._overflow = [], [], [], 0, 0
         else:
             return True  # set_time etc. have no phone representation
         self._dirty.set()
@@ -108,6 +115,8 @@ class PhoneClient(GarminClient):
             "subagents": self._subagents,
             "cards": cards,
         }
+        if any(self._names):
+            snap["names"] = self._names
         if self._overflow:
             snap["overflow"] = self._overflow
         return snap

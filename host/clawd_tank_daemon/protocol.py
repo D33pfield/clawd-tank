@@ -200,11 +200,17 @@ def daemon_message_to_ble_payload(msg: dict) -> Optional[str]:
     raise ValueError(f"Unknown event: {event}")
 
 
-def display_state_to_ble_payload(state: dict) -> str:
-    """Convert display state dict to v2 JSON payload."""
+def display_state_to_ble_payload(state: dict, with_names: bool = False) -> str:
+    """Convert display state dict to v2 JSON payload.
+
+    ``names`` (the project name of each session) is only for the phone transport: the board's
+    firmware has no use for it and the payload must stay inside one 256-byte BLE write.
+    """
     if "status" in state:
         return json.dumps({"action": "set_status", "status": state["status"]})
     payload = {"action": "set_sessions", **state}
+    if not with_names:
+        payload.pop("names", None)
     return json.dumps(payload)
 
 

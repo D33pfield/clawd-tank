@@ -330,7 +330,7 @@ class ClawdDaemon:
                                 if idx is not None:
                                     sweeping_state["anims"][idx] = "sweeping"
                                 break
-                    payload = display_state_to_ble_payload(sweeping_state)
+                    payload = display_state_to_ble_payload(sweeping_state, with_names=(name == "phone"))
                     await transport.write_notification(payload)
                     # No second fallback for v2 — firmware handles sweeping as oneshot
                 else:
@@ -360,6 +360,7 @@ class ClawdDaemon:
 
         anims = []
         ids = []
+        names = []
 
         # Spare / never-used sessions are not shown (and do not count towards the overflow).
         order = [(sid, did) for sid, did in self._session_order if self._is_displayable(sid)]
@@ -392,11 +393,14 @@ class ClawdDaemon:
             else:
                 anims.append("idle")
             ids.append(display_id)
+            names.append(str(state.get("project") or ""))
 
         if not anims:
             return {"status": "sleeping"}
 
         result = {"anims": anims, "ids": ids, "subagents": total_subagents}
+        if any(names):
+            result["names"] = names  # phone transport only, see display_state_to_ble_payload
         if len(order) > 4:
             result["overflow"] = len(order) - 4
         return result
@@ -577,7 +581,7 @@ class ClawdDaemon:
             if transport.is_connected:
                 version = self._transport_versions.get(name, 1)
                 if version >= 2:
-                    payload = display_state_to_ble_payload(new_state)
+                    payload = display_state_to_ble_payload(new_state, with_names=(name == "phone"))
                 else:
                     payload = display_state_to_v1_payload(new_state)
                 await transport.write_notification(payload)
@@ -751,7 +755,7 @@ class ClawdDaemon:
         self._last_display_state = state
         version = self._transport_versions.get(name, 1)
         if version >= 2:
-            status_payload = display_state_to_ble_payload(state)
+            status_payload = display_state_to_ble_payload(state, with_names=(name == "phone"))
         else:
             status_payload = display_state_to_v1_payload(state)
         await transport.write_notification(status_payload)

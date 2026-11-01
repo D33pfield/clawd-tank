@@ -55,12 +55,27 @@ async def test_caps_sessions_and_ignores_garbage():
     assert await client.write_notification(json.dumps({"action": "set_time", "epoch": 1})) is True
 
 
+@pytest.mark.asyncio
+async def test_names_ride_along_with_the_sessions():
+    client = PhoneClient("http://127.0.0.1:1/p", "tok")
+    msg = {"action": "set_sessions", "anims": ["typing", "idle"], "ids": [1, 2], "subagents": 0,
+           "names": ["clawd-tank", "x" * 40, "third"]}
+    await client.write_notification(json.dumps(msg))
+    assert client._snapshot()["names"] == ["clawd-tank", "x" * 24]
+    del msg["names"]
+    await client.write_notification(json.dumps(msg))
+    assert "names" not in client._snapshot()
+    await client.write_notification(json.dumps({"action": "set_status", "status": "sleeping"}))
+    assert "names" not in client._snapshot()
+
+
 def test_snapshot_under_relay_cap_worst_case():
     # Relay cap is 4096 bytes. Control characters are the worst case: ensure_ascii=False
     # still escapes them as 6-byte \\u00XX sequences.
     client = PhoneClient("http://127.0.0.1:1/p", "tok")
     client._anims = ["confused"] * 4
     client._ids = [10**9] * 4
+    client._names = ["\x1b" * 24] * 4
     for i in range(4):
         client._notifications[str(i)] = {"id": "x" * 40, "p": "\x1b" * 24, "m": "\x1b" * 60, "e": 1}
     body = json.dumps(client._snapshot(), separators=(",", ":"), ensure_ascii=False).encode()

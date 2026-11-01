@@ -192,7 +192,7 @@ async def test_last_display_state_tracks_changes():
         "event": "add", "hook": "Stop", "session_id": "s1",
         "project": "proj", "message": "Waiting",
     })
-    assert d._last_display_state == {"anims": ["idle"], "ids": [1], "subagents": 0}
+    assert d._last_display_state == {"anims": ["idle"], "ids": [1], "subagents": 0, "names": ["proj"]}
     await d._handle_message({"event": "dismiss", "hook": "SessionEnd", "session_id": "s1"})
     assert d._last_display_state == {"status": "sleeping"}
 
@@ -461,7 +461,7 @@ async def test_subagent_lifecycle():
     # Subagent finishes via SubagentStop
     await d._handle_message({"event": "subagent_stop", "session_id": "s1", "agent_id": "a1"})
     assert not d._session_states["s1"].get("subagents")
-    assert d._compute_display_state() == {"anims": ["idle"], "ids": [1], "subagents": 0}
+    assert d._compute_display_state() == {"anims": ["idle"], "ids": [1], "subagents": 0, "names": ["proj"]}
 
     # Staleness eviction works normally
     d._session_states["s1"]["last_event"] = time.time() - 9999
@@ -1548,3 +1548,17 @@ def test_long_quiet_working_waiting_or_subagent_sessions_stay():
     _add_session(d, "q", {"state": "waiting", "last_event": time.time(), "last_event_monotonic": old})
     _add_session(d, "a", {"state": "idle", "last_event": time.time(), "last_event_monotonic": old, "subagents": {"x"}})
     assert len(d._compute_display_state()["anims"]) == 3
+
+
+def test_display_state_carries_project_names_when_known():
+    d = make_daemon()
+    _add_session(d, "s1", {"state": "working", "tool_name": "Bash", "last_event": time.time(), "project": "clawd-tank"})
+    _add_session(d, "s2", {"state": "thinking", "last_event": time.time()})
+    state = d._compute_display_state()
+    assert state["names"] == ["clawd-tank", ""]
+
+
+def test_display_state_has_no_names_when_none_known():
+    d = make_daemon()
+    _add_session(d, "s1", {"state": "thinking", "last_event": time.time()})
+    assert "names" not in d._compute_display_state()

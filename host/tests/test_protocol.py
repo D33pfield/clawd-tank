@@ -343,6 +343,12 @@ def test_display_state_to_payload_v2_sessions():
     assert "overflow" not in parsed
 
 
+def test_display_state_names_only_go_to_the_phone():
+    state = {"anims": ["typing"], "ids": [1], "subagents": 0, "names": ["clawd-tank"]}
+    assert "names" not in json.loads(display_state_to_ble_payload(state))
+    assert json.loads(display_state_to_ble_payload(state, with_names=True))["names"] == ["clawd-tank"]
+
+
 def test_display_state_to_payload_v2_with_overflow():
     state = {"anims": ["typing"] * 4, "ids": [1, 2, 3, 4], "subagents": 0, "overflow": 2}
     payload = display_state_to_ble_payload(state)
