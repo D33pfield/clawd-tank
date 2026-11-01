@@ -33,10 +33,33 @@ def test_no_sessions_returns_sleeping():
     d = make_daemon()
     assert d._compute_display_state() == {"status": "sleeping"}
 
-def test_single_registered_session_returns_idle():
+def test_single_registered_session_is_hidden():
+    # A session that has only registered (never ran a tool) has nothing to show yet.
     d = make_daemon()
     _add_session(d, "s1", {"state": "registered", "last_event": time.time()})
-    assert d._compute_display_state() == {"anims": ["idle"], "ids": [1], "subagents": 0}
+    assert d._compute_display_state() == {"status": "sleeping"}
+
+def test_spare_process_is_hidden(monkeypatch):
+    # A pre-started `claude bg-spare` placeholder is not a conversation, whatever state it reports.
+    d = make_daemon()
+    _add_session(d, "spare", {"state": "confused", "last_event": time.time(), "pid": 111})
+    _add_session(d, "real", {"state": "working", "last_event": time.time(), "pid": 222})
+    monkeypatch.setattr("clawd_tank_daemon.daemon._is_spare_process", lambda pid: pid == 111)
+    state = d._compute_display_state()
+    assert state["anims"] == ["typing"] and state["ids"] == [2]
+
+def test_hidden_sessions_do_not_count_towards_overflow():
+    d = make_daemon()
+    for i in range(6):
+        _add_session(d, f"r{i}", {"state": "registered", "last_event": time.time()})
+    _add_session(d, "real", {"state": "working", "last_event": time.time()})
+    state = d._compute_display_state()
+    assert state["anims"] == ["typing"] and "overflow" not in state
+
+def test_is_spare_process_reads_proc(tmp_path):
+    from clawd_tank_daemon.daemon import _is_spare_process
+    assert not _is_spare_process(None)
+    assert not _is_spare_process(2**30)  # no such process
 
 def test_single_idle_session_returns_idle():
     d = make_daemon()
@@ -90,12 +113,12 @@ def test_confused_and_idle_mixed():
     state = d._compute_display_state()
     assert state["anims"] == ["confused", "idle"]
 
-def test_registered_treated_as_idle():
+def test_registered_is_hidden_next_to_a_confused_one():
     d = make_daemon()
     _add_session(d, "s1", {"state": "registered", "last_event": time.time()})
     _add_session(d, "s2", {"state": "confused", "last_event": time.time()})
     state = d._compute_display_state()
-    assert state["anims"] == ["idle", "confused"]
+    assert state["anims"] == ["confused"]
 
 
 # --- Task 4: _handle_message wiring ---
@@ -160,7 +183,7 @@ async def test_last_display_state_tracks_changes():
     d = make_daemon()
     assert d._last_display_state == {"status": "sleeping"}
     await d._handle_message({"event": "session_start", "session_id": "s1"})
-    assert d._last_display_state == {"anims": ["idle"], "ids": [1], "subagents": 0}
+    assert d._last_display_state == {"status": "sleeping"}  # registered only: nothing to show yet
     await d._handle_message({"event": "dismiss", "hook": "UserPromptSubmit", "session_id": "s1"})
     assert d._last_display_state == {"anims": ["thinking"], "ids": [1], "subagents": 0}
     await d._handle_message({"event": "tool_use", "session_id": "s1"})
@@ -413,7 +436,7 @@ async def test_subagent_lifecycle():
 
     # Session starts and begins working
     await d._handle_message({"event": "session_start", "session_id": "s1"})
-    assert d._compute_display_state() == {"anims": ["idle"], "ids": [1], "subagents": 0}
+    assert d._compute_display_state() == {"status": "sleeping"}
 
     await d._handle_message({"event": "tool_use", "session_id": "s1"})
     assert d._compute_display_state() == {"anims": ["typing"], "ids": [1], "subagents": 0}
@@ -665,9 +688,11 @@ async def test_display_state_preserves_arrival_order():
     await d._handle_message({"event": "session_start", "session_id": "aaa"})
     await d._handle_message({"event": "tool_use", "session_id": "aaa"})
     await d._handle_message({"event": "session_start", "session_id": "bbb"})
-    # bbb is registered → idle
+    # bbb has only registered, so it is hidden until it does something
+    assert d._compute_display_state()["anims"] == ["typing"]
+    await d._handle_message({"event": "tool_use", "session_id": "bbb"})
     state = d._compute_display_state()
-    assert state["anims"] == ["typing", "idle"]
+    assert state["anims"] == ["typing", "typing"]
     assert state["ids"] == [1, 2]
 
 
@@ -1503,3 +1528,23 @@ def test_liveness_persists_after_eviction(tmp_path):
     import json as _json
     raw = _json.loads((tmp_path / "sessions.json").read_text())
     assert "s1" not in raw.get("sessions", {})
+
+
+def test_quiet_idle_session_drops_off_after_two_minutes():
+    d = make_daemon()
+    _add_session(d, "s1", {"state": "idle", "last_event": time.time(), "last_event_monotonic": time.monotonic() - 119})
+    assert d._compute_display_state()["anims"] == ["idle"]
+    d._session_states["s1"]["last_event_monotonic"] = time.monotonic() - 121
+    assert d._compute_display_state() == {"status": "sleeping"}
+    # the session is still tracked, and comes back at its next event
+    assert "s1" in d._session_states
+    d._session_states["s1"]["last_event_monotonic"] = time.monotonic()
+    assert d._compute_display_state()["anims"] == ["idle"]
+
+def test_long_quiet_working_waiting_or_subagent_sessions_stay():
+    d = make_daemon()
+    old = time.monotonic() - 600
+    _add_session(d, "w", {"state": "working", "last_event": time.time(), "last_event_monotonic": old})
+    _add_session(d, "q", {"state": "waiting", "last_event": time.time(), "last_event_monotonic": old})
+    _add_session(d, "a", {"state": "idle", "last_event": time.time(), "last_event_monotonic": old, "subagents": {"x"}})
+    assert len(d._compute_display_state()["anims"]) == 3

@@ -72,6 +72,18 @@ def next_resync_after(now: datetime) -> datetime:
     return target
 
 
+def _is_spare_process(pid: Optional[int]) -> bool:
+    """True if pid is a `claude bg-spare` placeholder (Linux /proc; anything unreadable counts as not a spare)."""
+    if not pid:
+        return False
+    try:
+        with open(f"/proc/{int(pid)}/cmdline", "rb") as f:
+            argv = f.read().split(b"\0")
+    except (OSError, ValueError):
+        return False
+    return b"bg-spare" in argv
+
+
 @runtime_checkable
 class DaemonObserver(Protocol):
     def on_connection_change(self, connected: bool, transport: str = "") -> None: ...
@@ -220,6 +232,8 @@ class ClawdDaemon:
         self._last_display_state: dict = {"status": "sleeping"}
         self._transport_versions: dict[str, int] = {}  # transport_name → protocol version
         self._session_staleness_timeout: float = 600.0
+        # Seconds without events before an idle or confused session stops being drawn (it is still tracked).
+        self._idle_hide_after: float = 120.0
         # _evict_stale_sessions() removed — Task 6 startup prune covers this.
 
     async def _handle_message(self, msg: dict) -> None:
@@ -347,12 +361,15 @@ class ClawdDaemon:
         anims = []
         ids = []
 
+        # Spare / never-used sessions are not shown (and do not count towards the overflow).
+        order = [(sid, did) for sid, did in self._session_order if self._is_displayable(sid)]
+
         # Count subagents across ALL sessions, not just visible ones
         total_subagents = sum(
             len(s.get("subagents", set())) for s in self._session_states.values()
         )
 
-        for session_id, display_id in self._session_order[:4]:
+        for session_id, display_id in order[:4]:
             state = self._session_states.get(session_id)
             if state is None:
                 continue
@@ -380,9 +397,25 @@ class ClawdDaemon:
             return {"status": "sleeping"}
 
         result = {"anims": anims, "ids": ids, "subagents": total_subagents}
-        if len(self._session_order) > 4:
-            result["overflow"] = len(self._session_order) - 4
+        if len(order) > 4:
+            result["overflow"] = len(order) - 4
         return result
+
+    def _is_displayable(self, session_id: str) -> bool:
+        """False for sessions that should not get a Clawd on screen: one that has only
+        registered and never run a tool (nothing to show yet), and a pre-started spare
+        process (`claude bg-spare`) that is not a conversation at all."""
+        state = self._session_states.get(session_id)
+        if state is None:
+            return False
+        if state.get("state") == "registered" and not state.get("subagents"):
+            return False
+        # A quiet session drops off the screen after a couple of minutes. Only the calm states: a working
+        # or thinking session can sit through a long tool call without events, and a waiting one is blocked on you.
+        if (state.get("state") in ("idle", "confused") and not state.get("subagents")
+                and time.monotonic() - state.get("last_event_monotonic", time.monotonic()) > self._idle_hide_after):
+            return False
+        return not _is_spare_process(state.get("pid"))
 
     def _enter_state(
         self, session_id: str, state: str, tool_name: str, now: float, *, create: bool,
